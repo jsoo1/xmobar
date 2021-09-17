@@ -23,6 +23,7 @@ module Xmobar (xmobar
               , Runnable (..)
               , Exec (..)
               , Command (..)
+              , SignalType (..)
               , module Xmobar.Config.Types
               , module Xmobar.Config.Parse
               , module Xmobar.Plugins.BufferedPipeReader
@@ -74,6 +75,8 @@ import Xmobar.Plugins.StdinReader
 import Xmobar.Plugins.MarqueePipeReader
 import Xmobar.Plugins.XMonadLog
 import Xmobar.Plugins.NotmuchMail
+
+import Xmobar.System.Signal(SignalType (..))
 
 import Xmobar.App.Main(xmobar, xmobarMain, configFromArgs)
 import Xmobar.App.Config(defaultConfig)
