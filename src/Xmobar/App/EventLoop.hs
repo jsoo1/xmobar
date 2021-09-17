@@ -42,7 +42,7 @@ import Data.Maybe (fromJust, isJust)
 import qualified Data.List.NonEmpty as NE
 
 import Xmobar.System.Signal
-import Xmobar.Config.Types
+import Xmobar.Config.Types (persistent, position, iconRoot, Config, Align(..), XPosition(..))
 import Xmobar.Run.Exec
 import Xmobar.Run.Runnable
 import Xmobar.X11.Actions

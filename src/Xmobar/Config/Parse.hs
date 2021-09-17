@@ -57,7 +57,7 @@ parseConfig defaultConfig =
         x <- perms
         eof
         s <- getState
-        return (x,s)
+        return (x (SignalChan Nothing),s)
 
       perms = permute $ Config
               <$?> pFont <|?> pFontList <|?> pWmClass <|?> pWmName

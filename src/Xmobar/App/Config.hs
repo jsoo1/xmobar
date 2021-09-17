@@ -64,6 +64,7 @@ defaultConfig =
            , template = "%StdinReader% }{ " ++
                         "<fc=#00FF00>%uname%</fc> * <fc=#FF0000>%theDate%</fc>"
            , verbose = False
+           , signal = SignalChan Nothing
            }
 
 -- | Return the path to the xmobar data directory.  This directory is
