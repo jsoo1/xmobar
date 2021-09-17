@@ -45,6 +45,6 @@ instance Read (QueueReader a) where
 instance Exec (QueueReader a) where
   -- | Read from queue as data arrives.
   start QueueReader{..} cb =
-    forever (STM.atomically (qShowItem <$> STM.readTQueue qQueue) >>= cb)
+    forever (STM.atomically (foldMap qShowItem <$> STM.flushTQueue qQueue) >>= cb)
 
   alias = qName
