@@ -7,7 +7,7 @@ import Xmobar.Run.Exec (Exec (..))
 
 import Control.Monad (forever)
 import qualified Control.Concurrent.STM as STM
-import qualified Data.List.NonEmpty as NonEmpty
+import Data.Foldable (traverse_)
 import Data.List.NonEmpty (nonEmpty)
 
 -- | A 'QueueReader' displays data from an 'TQueue a' where
@@ -49,6 +49,6 @@ instance Exec (QueueReader a) where
   start QueueReader{..} cb =
     forever $ do
       xs <- nonEmpty <$> STM.atomically (STM.flushTQueue qQueue)
-      cb (maybe "" (qShowItem . NonEmpty.last) xs)
+      maybe (pure ()) (traverse_ (cb . qShowItem)) xs
 
   alias = qName
