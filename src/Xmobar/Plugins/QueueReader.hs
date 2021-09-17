@@ -7,6 +7,8 @@ import Xmobar.Run.Exec (Exec (..))
 
 import Control.Monad (forever)
 import qualified Control.Concurrent.STM as STM
+import qualified Data.List.NonEmpty as NonEmpty
+import Data.List.NonEmpty (nonEmpty)
 
 -- | A 'QueueReader' displays data from an 'TQueue a' where
 -- the data items 'a' are rendered by a user supplied function.
@@ -45,6 +47,8 @@ instance Read (QueueReader a) where
 instance Exec (QueueReader a) where
   -- | Read from queue as data arrives.
   start QueueReader{..} cb =
-    forever (STM.atomically (foldMap qShowItem <$> STM.flushTQueue qQueue) >>= cb)
+    forever $ do
+      xs <- nonEmpty <$> STM.atomically (STM.flushTQueue qQueue)
+      cb (maybe "" (qShowItem . NonEmpty.last) xs)
 
   alias = qName
