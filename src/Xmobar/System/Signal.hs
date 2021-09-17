@@ -60,12 +60,11 @@ parseSignalType :: String -> Maybe SignalType
 parseSignalType = fmap fst . safeHead . reads
 
 -- | Signal handling
-setupSignalHandler :: IO (TMVar SignalType)
-setupSignalHandler = do
-   tid   <- newEmptyTMVarIO
+setupSignalHandler :: TMVar SignalType -> IO ()
+setupSignalHandler tid = do
    installHandler sigUSR2 (Catch $ updatePosHandler tid) Nothing
    installHandler sigUSR1 (Catch $ changeScreenHandler tid) Nothing
-   return tid
+   return ()
 
 updatePosHandler :: TMVar SignalType -> IO ()
 updatePosHandler sig = do

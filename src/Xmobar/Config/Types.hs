@@ -17,9 +17,12 @@ module Xmobar.Config.Types
       -- $config
       Config (..)
     , XPosition (..), Align (..), Border(..)
+    , SignalChan (..)
     ) where
 
+import qualified Control.Concurrent.STM as STM
 import Xmobar.Run.Runnable (Runnable(..))
+import Xmobar.System.Signal (SignalType)
 
 -- $config
 -- Configuration data type
@@ -65,6 +68,7 @@ data Config =
                                     --   right text alignment
            , template :: String     -- ^ The output template
            , verbose :: Bool        -- ^ Emit additional debug messages
+           , signal :: SignalChan   -- ^ The signal channel used to send signals to xmobar
            } deriving (Read, Show)
 
 data XPosition = Top
@@ -91,3 +95,12 @@ data Border = NoBorder
             | BottomBM Int
             | FullBM Int
               deriving ( Read, Show, Eq )
+
+newtype SignalChan = SignalChan { unSignalChan :: Maybe (STM.TMVar SignalType) }
+
+instance Read SignalChan where
+  readsPrec _ s = [ (SignalChan Nothing, s) ]
+
+instance Show SignalChan where
+  show (SignalChan (Just _)) = "SignalChan (Just <tmvar>)"
+  show (SignalChan Nothing) = "SignalChan Nothing"

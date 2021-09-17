@@ -18,12 +18,14 @@
 module Xmobar.App.Main (xmobar, xmobarMain, configFromArgs) where
 
 import Control.Concurrent.Async (Async, cancel)
+import Control.Concurrent.STM (TMVar, newEmptyTMVarIO)
 import Control.Exception (bracket)
 import Control.Monad (unless)
 
 import Data.Foldable (for_)
 import qualified Data.Map as Map
 import Data.List (intercalate)
+import Data.Maybe (isJust)
 import System.Posix.Process (executeFile)
 import System.Environment (getArgs)
 import System.FilePath ((</>), takeBaseName, takeDirectory, takeExtension)
@@ -53,7 +55,9 @@ xmobar conf = withDeferSignals $ do
   fl    <- mapM (initFont d) (additionalFonts conf)
   cls   <- mapM (parseTemplate (commands conf) (sepChar conf))
                 (splitTemplate (alignSep conf) (template conf))
-  sig   <- setupSignalHandler
+  let confSig = unSignalChan (signal conf)
+  sig   <- maybe newEmptyTMVarIO pure confSig
+  unless (isJust confSig) $ setupSignalHandler sig
   refLock <- newRefreshLock
   withTimer (refreshLock refLock) $
     bracket (mapM (mapM $ startCommand sig) cls)
