@@ -18,13 +18,14 @@
 module Xmobar.App.Main (xmobar, xmobarMain, configFromArgs) where
 
 import Control.Concurrent.Async (Async, cancel)
-import Control.Concurrent.STM (TMVar)
+import Control.Concurrent.STM (TMVar, newEmptyTMVarIO)
 import Control.Exception (bracket)
 import Control.Monad (unless)
 
 import Data.Foldable (for_)
 import qualified Data.Map as Map
 import Data.List (intercalate)
+import Data.Maybe (isJust)
 import System.Posix.Process (executeFile)
 import System.Environment (getArgs)
 import System.FilePath ((</>), takeBaseName, takeDirectory, takeExtension)
@@ -35,7 +36,7 @@ import Graphics.X11.Xlib
 
 import Xmobar.Config.Types
 import Xmobar.Config.Parse
-import Xmobar.System.Signal (SignalType, setupSignalHandler, withDeferSignals)
+import Xmobar.System.Signal (setupSignalHandler, withDeferSignals)
 import Xmobar.Run.Template
 import Xmobar.X11.Types
 import Xmobar.X11.Text
@@ -46,15 +47,17 @@ import Xmobar.App.Compile (recompile, trace)
 import Xmobar.App.Config
 import Xmobar.App.Timer (withTimer)
 
-xmobar :: Maybe (TMVar SignalType) -> Config -> IO ()
-xmobar signal conf = withDeferSignals $ do
+xmobar :: Config -> IO ()
+xmobar conf = withDeferSignals $ do
   initThreads
   d <- openDisplay ""
   fs    <- initFont d (font conf)
   fl    <- mapM (initFont d) (additionalFonts conf)
   cls   <- mapM (parseTemplate (commands conf) (sepChar conf))
                 (splitTemplate (alignSep conf) (template conf))
-  sig   <- maybe setupSignalHandler pure signal
+  let confSig = unSignalChan (signal conf)
+  sig   <- maybe newEmptyTMVarIO pure confSig
+  unless (isJust confSig) $ setupSignalHandler sig
   refLock <- newRefreshLock
   withTimer (refreshLock refLock) $
     bracket (mapM (mapM $ startCommand sig) cls)
@@ -90,7 +93,7 @@ xmobar' :: [String] -> Config -> IO ()
 xmobar' defs cfg = do
   unless (null defs || not (verbose cfg)) $ putStrLn $
     "Fields missing from config defaulted: " ++ intercalate "," defs
-  xmobar Nothing cfg
+  xmobar cfg
 
 xmobarMain :: IO ()
 xmobarMain = do
@@ -103,7 +106,7 @@ xmobarMain = do
   case cf of
     Nothing -> case rest of
                 (c:_) -> error $ c ++ ": file not found"
-                _ -> doOpts defaultConfig flags >>= xmobar Nothing
+                _ -> doOpts defaultConfig flags >>= xmobar
     Just p -> do r <- readConfig defaultConfig p
                  case r of
                    Left e ->
