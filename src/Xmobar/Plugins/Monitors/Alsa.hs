@@ -96,7 +96,7 @@ withMonitorWaiter mixerName alsaCtlPathOverride outputCallback cont = do
     cont $ takeMVar mvar
 
   where
-    defaultPath = "/usr/sbin/alsactl"
+    defaultPath = "/usr/bin/pactl"
 
     determineAlsaCtlPath =
       case alsaCtlPathOverride of
@@ -105,10 +105,10 @@ withMonitorWaiter mixerName alsaCtlPathOverride outputCallback cont = do
           if found
             then pure path
             else throwIO . ErrorCall $
-                  "Specified alsactl file " ++ path ++ " does not exist"
+                  "Specified pactl file " ++ path ++ " does not exist"
 
         Nothing -> do
-          (ec, path, err) <- readProcessWithExitCode "which" ["alsactl"] ""
+          (ec, path, err) <- readProcessWithExitCode "which" ["pactl"] ""
           unless (null err) $ hPutStrLn stderr err
           case ec of
             ExitSuccess -> pure $ trimTrailingNewline path
@@ -117,15 +117,16 @@ withMonitorWaiter mixerName alsaCtlPathOverride outputCallback cont = do
               if found
                 then pure defaultPath
                 else throwIO . ErrorCall $
-                      "alsactl not found in PATH or at " ++
+                      "pactl not found in PATH or at " ++
                       show defaultPath ++
                       "; please specify with --" ++
                       alsaCtlOptionName ++ "=/path/to/alsactl"
 
 
 alsaReaderThread :: String -> String -> (String -> IO a) -> MVar () -> IO b
-alsaReaderThread mixerName alsaCtlPath outputCallback mvar =
-  let createProc = (proc "stdbuf" ["-oL", alsaCtlPath, "monitor", mixerName])
+alsaReaderThread _ alsaCtlPath outputCallback mvar =
+  --let createProc = (proc "stdbuf" ["-oL", alsaCtlPath, "monitor", mixerName])
+  let createProc = (proc "stdbuf" ["-oL", alsaCtlPath, "subscribe"])
                       {std_out = CreatePipe}
 
       runAlsaOnce =
