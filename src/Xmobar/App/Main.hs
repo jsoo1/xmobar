@@ -18,7 +18,7 @@
 module Xmobar.App.Main (xmobar, xmobarMain, configFromArgs) where
 
 import Control.Concurrent.Async (Async, cancel)
-import Control.Concurrent.STM (TMVar, newEmptyTMVarIO)
+import Control.Concurrent.STM (newEmptyTMVarIO)
 import Control.Exception (bracket)
 import Control.Monad (unless)
 

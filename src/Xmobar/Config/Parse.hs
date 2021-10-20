@@ -57,7 +57,8 @@ parseConfig defaultConfig =
         x <- perms
         eof
         s <- getState
-        return (x (SignalChan Nothing),s)
+        let sig = signal defaultConfig
+        return (x sig ,s)
 
       perms = permute $ Config
               <$?> pFont <|?> pFontList <|?> pWmClass <|?> pWmName

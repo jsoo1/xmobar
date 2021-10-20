@@ -99,7 +99,7 @@ data Border = NoBorder
 newtype SignalChan = SignalChan { unSignalChan :: Maybe (STM.TMVar SignalType) }
 
 instance Read SignalChan where
-  readsPrec _ s = [ (SignalChan Nothing, s) ]
+  readsPrec _ _ = fail "Trying to read a SignalChan"
 
 instance Show SignalChan where
   show (SignalChan (Just _)) = "SignalChan (Just <tmvar>)"
