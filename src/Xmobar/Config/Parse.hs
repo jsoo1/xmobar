@@ -57,8 +57,7 @@ parseConfig defaultConfig =
         x <- perms
         eof
         s <- getState
-        let sig = signal defaultConfig
-        return (x sig ,s)
+        return (x, s)
 
       perms = permute $ Config
               <$?> pFont <|?> pFontList <|?> pWmClass <|?> pWmName
@@ -69,7 +68,7 @@ parseConfig defaultConfig =
               <|?> pAllDesktops <|?> pOverrideRedirect <|?> pPickBroadest
               <|?> pLowerOnStart <|?> pPersistent <|?> pIconRoot
               <|?> pCommands <|?> pSepChar <|?> pAlignSep <|?> pTemplate
-              <|?> pVerbose
+              <|?> pVerbose <|?> pSignal
 
       fields    = [ "font", "additionalFonts","bgColor", "fgColor"
                   , "wmClass", "wmName", "sepChar"
@@ -77,7 +76,7 @@ parseConfig defaultConfig =
                   , "position" , "textOffset", "textOffsets", "iconOffset"
                   , "allDesktops", "overrideRedirect", "pickBroadest"
                   , "hideOnStart", "lowerOnStart", "persistent", "iconRoot"
-                  , "alpha", "commands", "verbose"
+                  , "alpha", "commands", "verbose", "signal"
                   ]
 
       pFont = strField font "font"
@@ -106,6 +105,8 @@ parseConfig defaultConfig =
       pIconRoot = readField iconRoot "iconRoot"
       pAlpha = readField alpha "alpha"
       pVerbose = readField verbose "verbose"
+
+      pSignal = field signal "signal" $ fail "use default signal"
 
       pCommands = field commands "commands" readCommands
 
