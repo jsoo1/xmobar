@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 ------------------------------------------------------------------------------
 -- |
@@ -33,7 +34,6 @@ import Graphics.X11.Xlib.Extras
 
 import Xmobar.Config.Types
 import qualified Xmobar.X11.Bitmap as B
-import Xmobar.X11.Actions (Action(..))
 import Xmobar.X11.Types
 import Xmobar.X11.Text
 import Xmobar.X11.ColorCache
@@ -50,17 +50,17 @@ fi :: (Integral a, Num b) => a -> b
 fi = fromIntegral
 
 -- | Draws in and updates the window
-drawInWin :: Rectangle -> [[(Widget, TextRenderInfo, Int, Maybe [Action])]] -> X ()
+drawInWin :: Rectangle -> [[Seg]] -> X ()
 drawInWin wr@(Rectangle _ _ wid ht) ~[left,center,right] = do
   r <- ask
   let (c,d) = (config &&& display) r
       (w,(fs,vs)) = (window &&& fontListS &&& verticalOffsets) r
       strLn = liftIO . mapM getWidth
       iconW i = maybe 0 B.width (lookup i $ iconS r)
-      getWidth (Text s,cl,i,_) =
-        textWidth d (safeIndex fs i) s >>= \tw -> return (Text s,cl,i,fi tw)
-      getWidth (Icon s,cl,i,_) = return (Icon s,cl,i,fi $ iconW s)
-      getWidth (Hspace p,cl,i,_) = return (Hspace p,cl,i,fi p)
+      getWidth (Text s, Format { textRenderInfo, fontIndex }) =
+        textWidth d (safeIndex fs fontIndex) s >>= \tw -> return (Text s,textRenderInfo,fontIndex,fi tw)
+      getWidth (Icon s, Format { textRenderInfo, fontIndex }) = return (Icon s,textRenderInfo,fontIndex,fi $ iconW s)
+      getWidth (Hspace p,Format { textRenderInfo, fontIndex }) = return (Hspace p,textRenderInfo,fontIndex,fi p)
 
   p <- liftIO $ createPixmap d w wid ht
                          (defaultDepthOfScreen (defaultScreenOfDisplay d))
