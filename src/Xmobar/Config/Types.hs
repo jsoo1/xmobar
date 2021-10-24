@@ -20,6 +20,7 @@ module Xmobar.Config.Types
     ) where
 
 import Xmobar.Run.Runnable (Runnable(..))
+import Xmobar.Config.Align (Align(..))
 
 -- $config
 -- Configuration data type
@@ -80,8 +81,6 @@ data XPosition = Top
                | Static {xpos, ypos, width, height :: Int}
                | OnScreen Int XPosition
                  deriving ( Read, Show, Eq )
-
-data Align = L | R | C deriving ( Read, Show, Eq )
 
 data Border = NoBorder
             | TopB
