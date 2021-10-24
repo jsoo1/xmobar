@@ -110,8 +110,8 @@ library
                    Xmobar.Config.Align,
                    Xmobar.Config.Types,
                    Xmobar.Config.Parse,
+                   Xmobar.Config.Template.Parse,
                    Xmobar.Run.Types,
-                   Xmobar.Run.Template,
                    Xmobar.Run.Exec,
                    Xmobar.Run.Command,
                    Xmobar.Run.Runnable
@@ -129,7 +129,6 @@ library
                    Xmobar.System.Kbd,
                    Xmobar.X11.Actions,
                    Xmobar.X11.Events,
-                   Xmobar.X11.Parsers,
                    Xmobar.X11.Types,
                    Xmobar.X11.Text,
                    Xmobar.X11.Bitmap,

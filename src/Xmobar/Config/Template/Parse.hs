@@ -4,7 +4,7 @@
 
 -----------------------------------------------------------------------------
 -- |
--- Module      :  Xmobar.Parsers
+-- Module      :  Xmobar.Config.Template.Parse
 -- Copyright   :  (c) Andrea Rossato
 -- License     :  BSD-style (see LICENSE)
 --
@@ -16,7 +16,7 @@
 --
 -----------------------------------------------------------------------------
 
-module Xmobar.X11.Parsers ( parseString
+module Xmobar.Config.Template.Parse ( parseString
                           , runXParser
                           , allParsers
                           , emptyParseState

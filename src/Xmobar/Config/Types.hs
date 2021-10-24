@@ -22,7 +22,7 @@ module Xmobar.Config.Types
 
 import Xmobar.Run.Runnable (Runnable(..))
 import Xmobar.Config.Align (Align(..))
-import Xmobar.X11.Parsers (ConfigTemplate(..))
+import Xmobar.Config.Template.Parse (ConfigTemplate(..))
 
 -- $config
 -- Configuration data type
