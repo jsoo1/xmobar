@@ -25,7 +25,7 @@ import System.Directory (doesFileExist)
 import System.FilePath ((</>))
 import System.Mem.Weak ( addFinalizer )
 import Xmobar.X11.ColorCache
-import Xmobar.X11.Parsers (Widget(..), Seg)
+import Xmobar.X11.Parsers (Widget(..), Seg(..))
 
 #ifdef XPM
 import Xmobar.X11.XPMFile(readXPMFile)
@@ -56,8 +56,8 @@ data Bitmap = Bitmap { width  :: Dimension
 updateCache :: Display -> Window -> Map FilePath Bitmap -> FilePath ->
                [[Seg]] -> IO (Map FilePath Bitmap)
 updateCache dpy win cache iconRoot ps = do
-  let paths = map (\(Icon p, _) -> p) . concatMap (filter icons) $ ps
-      icons (Icon _, _) = True
+  let paths = map (\Seg { widget = Icon p } -> p) . concatMap (filter icons) $ ps
+      icons Seg { widget = Icon _ } = True
       icons _ = False
       expandPath path@('/':_) = path
       expandPath path@('.':'/':_) = path

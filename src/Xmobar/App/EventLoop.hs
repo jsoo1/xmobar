@@ -43,11 +43,11 @@ import Data.Maybe (fromJust, isJust)
 import qualified Data.List.NonEmpty as NE
 
 import Xmobar.System.Signal
-import Xmobar.Config.Types (persistent, position, iconRoot, Config, Align(..), XPosition(..))
+import Xmobar.Config.Types (persistent, position, iconRoot, Config(..), Align(..), XPosition(..))
 import Xmobar.Run.Exec
 import Xmobar.Run.Runnable
 import Xmobar.X11.Actions
-import Xmobar.X11.Parsers
+import Xmobar.X11.Parsers hiding (sepChar, commands)
 import Xmobar.X11.Window
 import Xmobar.X11.Text
 import Xmobar.X11.Draw
@@ -162,7 +162,7 @@ eventLoop tv xc@(XConf d r w fs vos is cfg) as signal = do
       case typ of
          Wakeup -> do
             str <- updateString cfg tv
-            let str' = either (\e -> [[(Text ("Parse error: " <> show e), emptyFormat cfg)]]) id str
+            let str' = either (parseErrorSegs cfg) id str
             xc' <- updateCache d w is (iconRoot cfg) str' >>=
                      \c -> return xc { iconS = c }
             as' <- updateActions xc r str'
@@ -232,6 +232,15 @@ eventLoop tv xc@(XConf d r w fs vos is cfg) as signal = do
             filter (\(_, from, to) -> x >= from && x <= to) as
           eventLoop tv xc as signal
 
+-- | Creates a segment containing parse errors
+parseErrorSegs :: Config -> ParseError -> [[Seg]]
+parseErrorSegs cfg e =
+  [[ Seg { widget = Text ("Parse error: " <> show e)
+         , format = emptyFormat (fgColor cfg)
+         , runnable = Nothing
+         }
+   ]]
+
 -- $command
 
 -- | Runs a command as an independent thread and returns its Async handles
@@ -252,10 +261,11 @@ startCommand sig (com,s,ss)
     where is = s ++ "Updating..." ++ ss
 
 updateString :: Config -> TVar [String] -> IO (Either ParseError [[Seg]])
-updateString conf v = do
+updateString Config { fgColor, sepChar, commands } v = do
   s <- readTVarIO v
   let l:c:r:_ = s ++ repeat ""
-  return $ mapM (parseString conf) [l, c, r]
+      parseState = emptyParseState fgColor sepChar commands
+  return $ mapM (parseString parseState) [l, c, r]
 
 updateActions :: XConf -> Rectangle -> [[Seg]] -> IO [([Action], Position, Position)]
 updateActions conf (Rectangle _ _ wid _) ~[left,center,right] = do
@@ -263,9 +273,9 @@ updateActions conf (Rectangle _ _ wid _) ~[left,center,right] = do
       strLn :: [Seg] -> IO [(Maybe [Action], Position, Position)]
       strLn  = liftIO . mapM getCoords
       iconW i = maybe 0 Bitmap.width (lookup i $ iconS conf)
-      getCoords (Text s, Format { fontIndex, actions }) = textWidth d (safeIndex fs fontIndex) s >>= \tw -> return (actions, 0, fi tw)
-      getCoords (Icon s, Format { actions }) = return (actions, 0, fi $ iconW s)
-      getCoords (Hspace w,Format { actions }) = return (actions, 0, fi w)
+      getCoords Seg { widget = Text s, format = Format { fontIndex, actions } } = textWidth d (safeIndex fs fontIndex) s >>= \tw -> return (actions, 0, fi tw)
+      getCoords Seg { widget = Icon s, format = Format { actions } } = return (actions, 0, fi $ iconW s)
+      getCoords Seg { widget = Hspace w, format = Format { actions } } = return (actions, 0, fi w)
       partCoord off xs = map (\(a, x, x') -> (fromJust a, x, x')) $
                          filter (\(a, _,_) -> isJust a) $
                          scanl (\(_,_,x') (a,_,w') -> (a, x', x' + w'))
