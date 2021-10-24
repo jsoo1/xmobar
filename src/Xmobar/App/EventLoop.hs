@@ -44,11 +44,11 @@ import Data.Maybe (fromJust, isJust)
 import qualified Data.List.NonEmpty as NE
 
 import Xmobar.System.Signal
-import Xmobar.Config.Types (persistent, position, iconRoot, Config(..), Align(..), XPosition(..))
+import Xmobar.Config.Types
+import Xmobar.Config.Template.Parse hiding (sepChar, alignSep, commands)
 import Xmobar.Run.Exec
 import Xmobar.Run.Runnable
 import Xmobar.X11.Actions
-import Xmobar.X11.Parsers hiding (sepChar, alignSep, commands)
 import Xmobar.X11.Window
 import Xmobar.X11.Text
 import Xmobar.X11.Draw

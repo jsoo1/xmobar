@@ -38,7 +38,7 @@ import Xmobar.X11.Types
 import Xmobar.X11.Text
 import Xmobar.X11.ColorCache
 import Xmobar.X11.Window (drawBorder)
-import Xmobar.X11.Parsers hiding (parseString)
+import Xmobar.Config.Template.Parse hiding (parseString)
 import Xmobar.System.Utils (safeIndex)
 
 #ifdef XFT

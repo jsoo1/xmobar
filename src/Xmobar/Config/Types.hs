@@ -25,7 +25,7 @@ import qualified Control.Concurrent.STM as STM
 import Xmobar.Run.Runnable (Runnable(..))
 import Xmobar.System.Signal (SignalType)
 import Xmobar.Config.Align (Align(..))
-import Xmobar.X11.Parsers (ConfigTemplate(..))
+import Xmobar.Config.Template.Parse (ConfigTemplate(..))
 
 -- $config
 -- Configuration data type
