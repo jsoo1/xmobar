@@ -23,6 +23,7 @@ module Xmobar.Config.Types
 import qualified Control.Concurrent.STM as STM
 import Xmobar.Run.Runnable (Runnable(..))
 import Xmobar.System.Signal (SignalType)
+import Xmobar.Config.Align (Align(..))
 
 -- $config
 -- Configuration data type
@@ -84,8 +85,6 @@ data XPosition = Top
                | Static {xpos, ypos, width, height :: Int}
                | OnScreen Int XPosition
                  deriving ( Read, Show, Eq )
-
-data Align = L | R | C deriving ( Read, Show, Eq )
 
 data Border = NoBorder
             | TopB
