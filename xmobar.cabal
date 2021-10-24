@@ -107,6 +107,7 @@ library
                      Xmobar.Plugins.Monitors.Cpu
 
     other-modules: Paths_xmobar,
+                   Xmobar.Config.Align,
                    Xmobar.Config.Types,
                    Xmobar.Config.Parse,
                    Xmobar.Run.Types,
