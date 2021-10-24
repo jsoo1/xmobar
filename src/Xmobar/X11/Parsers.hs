@@ -17,9 +17,14 @@
 -----------------------------------------------------------------------------
 
 module Xmobar.X11.Parsers ( parseString
+                          , runXParser
+                          , allParsers
                           , emptyParseState
                           , emptyFormat
                           , ParseState(..)
+                          , ConfigTemplate(..)
+                          , Bar(..)
+                          , allSegments
                           , Seg(..)
                           , Format(..)
                           , Box(..)
@@ -46,24 +51,32 @@ import Text.Read (readMaybe)
 import Graphics.X11.Types (Button)
 import Foreign.C.Types (CInt)
 
+data Bar = Bar { left, center, right :: [Seg] }
+  deriving (Show)
+
+allSegments :: Bar -> [Seg]
+allSegments Bar { left, center, right } = left <> center <> right
+
 type Parser = Parsec String ParseState
 
 data ParseState = ParseState { formatState :: Format
+                             , alignSep :: String
                              , sepChar :: String
                              , commands :: [Runnable]
                              }
 
-emptyParseState :: String -> String -> [Runnable] -> ParseState
-emptyParseState fgColor sepChar commands = ParseState
+emptyParseState :: String -> String -> String -> [Runnable] -> ParseState
+emptyParseState fgColor sepChar alignSep commands = ParseState
   { formatState = emptyFormat fgColor
   , sepChar
+  , alignSep
   , commands
   }
 
 data  Format = Format { fontIndex :: FontIndex
                       , textRenderInfo :: TextRenderInfo
                       , actions :: Maybe [Action]
-                      }
+                      } deriving (Show)
 
 emptyFormat :: String -> Format
 emptyFormat fgColor = Format { fontIndex = 0
@@ -71,12 +84,19 @@ emptyFormat fgColor = Format { fontIndex = 0
                              , actions = Nothing
                              }
 
+data ConfigTemplate = Unparsed String | Parsed Bar
+  deriving (Show)
+
+instance Read ConfigTemplate where
+  readsPrec i = fmap (\(x, s) -> (Unparsed x, s)) . readsPrec i
+
 data Seg = Seg { widget :: Widget
                , format :: Format
                , runnable :: Maybe (Runnable, String, String)
-               }
+               } deriving (Show)
 
 data Widget = Icon String | Text String | Hspace Int32
+  deriving (Eq, Show)
 
 data BoxOffset = BoxOffset Align Int32 deriving (Eq, Show)
 -- margins: Top, Right, Bottom, Left
@@ -95,7 +115,7 @@ data TextRenderInfo =
                    , tBgTopOffset    :: Int32
                    , tBgBottomOffset :: Int32
                    , tBoxes          :: [Box]
-                   } deriving Show
+                   } deriving (Eq, Show)
 
 emptyTextRenderInfo :: String -> TextRenderInfo
 emptyTextRenderInfo fgColor = TextRenderInfo fgColor 0 0 []
@@ -103,9 +123,25 @@ emptyTextRenderInfo fgColor = TextRenderInfo fgColor 0 0 []
 type FontIndex   = Int
 
 -- | Runs the string parser
-parseString :: ParseState -> String -> Either ParseError [Seg]
-parseString initial =
-  runParser (fmap concat stringParser) initial mempty
+runXParser :: Parser a -> ParseState -> String -> Either ParseError a
+runXParser p initial = runParser p initial mempty
+
+parseString :: ParseState -> String -> Either ParseError Bar
+parseString = runXParser barParser
+
+defaultAlign :: String
+defaultAlign = "}{"
+
+barParser :: Parser Bar
+barParser = do
+  ParseState { alignSep } <- getState
+  let [alignSepL, alignSepR] = if length alignSep == 2 then alignSep else defaultAlign
+      allParsersTill p = concat <$> manyTill allParsers p
+
+  (try (Bar <$> allParsersTill (char alignSepL)
+            <*> allParsersTill (char alignSepR)
+            <*> allParsersTill eof)
+   <|> (Bar <$> allParsersTill eof <*> mempty <*> mempty))
 
 allParsers :: Parser [Seg]
 allParsers = textParser
@@ -117,16 +153,13 @@ allParsers = textParser
                 <|> try boxParser
                 <|> colorParser
 
--- | Gets the string and combines the needed parsers
-stringParser :: Parser [[Seg]]
-stringParser = manyTill allParsers eof
-
 -- | Parses a maximal string without markup.
 textParser :: Parser [Seg]
 textParser = do
-  state@ParseState { formatState = format, commands } <- getState
+  state@ParseState { formatState = format, alignSep, commands } <- getState
+  let aligners = if length alignSep == 2 then alignSep else defaultAlign
   s <- many1 $
-       noneOf "<" <|>
+       noneOf ("<" <> aligners) <|>
          try (notFollowedBy' (char '<')
               (try (string "fc=")  <|>
                 try (string "box")  <|>

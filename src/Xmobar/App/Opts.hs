@@ -140,7 +140,7 @@ doOpts conf (o:oo) =
     D -> doOpts' (conf {overrideRedirect = False})
     AlignSep s -> doOpts' (conf {alignSep = s})
     SepChar s -> doOpts' (conf {sepChar = s})
-    Template s -> doOpts' (conf {template = s})
+    Template s -> doOpts' (conf {template = Unparsed s})
     IconRoot s -> doOpts' (conf {iconRoot = s})
     OnScr n -> doOpts' (conf {position = OnScreen (read n) $ position conf})
     Commands s -> case readCom 'c' s of
