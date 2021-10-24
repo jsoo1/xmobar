@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -15,13 +16,29 @@
 --
 -----------------------------------------------------------------------------
 
-module Xmobar.X11.Parsers (parseString, emptyFormat, Seg, Format(..), Box(..), BoxBorder(..), BoxOffset(..),
-  BoxMargins(..), TextRenderInfo(..), Widget(..), ParseError) where
+module Xmobar.X11.Parsers ( parseString
+                          , emptyParseState
+                          , emptyFormat
+                          , ParseState(..)
+                          , Seg(..)
+                          , Format(..)
+                          , Box(..)
+                          , BoxBorder(..)
+                          , BoxOffset(..)
+                          , BoxMargins(..)
+                          , TextRenderInfo(..)
+                          , Widget(..)
+                          , ParseError
+                          ) where
 
-import Xmobar.Config.Types
 import Xmobar.X11.Actions
+import Xmobar.Config.Align
+import Xmobar.Run.Command
+import Xmobar.Run.Runnable
+import Xmobar.Run.Exec
 
 import Control.Monad (guard, mzero)
+import Data.List (find)
 import Data.Maybe (fromMaybe)
 import Data.Int (Int32)
 import Text.Parsec
@@ -29,21 +46,35 @@ import Text.Read (readMaybe)
 import Graphics.X11.Types (Button)
 import Foreign.C.Types (CInt)
 
-type Parser = Parsec String Format
+type Parser = Parsec String ParseState
+
+data ParseState = ParseState { formatState :: Format
+                             , sepChar :: String
+                             , commands :: [Runnable]
+                             }
+
+emptyParseState :: String -> String -> [Runnable] -> ParseState
+emptyParseState fgColor sepChar commands = ParseState
+  { formatState = emptyFormat fgColor
+  , sepChar
+  , commands
+  }
 
 data  Format = Format { fontIndex :: FontIndex
                       , textRenderInfo :: TextRenderInfo
                       , actions :: Maybe [Action]
                       }
 
-emptyFormat :: Config -> Format
-emptyFormat c = Format
-  { fontIndex = 0
-  , textRenderInfo = emptyTextRenderInfo c
-  , actions = Nothing
-  }
+emptyFormat :: String -> Format
+emptyFormat fgColor = Format { fontIndex = 0
+                             , textRenderInfo = emptyTextRenderInfo fgColor
+                             , actions = Nothing
+                             }
 
-type Seg = (Widget, Format)
+data Seg = Seg { widget :: Widget
+               , format :: Format
+               , runnable :: Maybe (Runnable, String, String)
+               }
 
 data Widget = Icon String | Text String
 
@@ -66,14 +97,15 @@ data TextRenderInfo =
                    , tBoxes          :: [Box]
                    }
 
-emptyTextRenderInfo :: Config -> TextRenderInfo
-emptyTextRenderInfo c = TextRenderInfo (fgColor c) 0 0 []
+emptyTextRenderInfo :: String -> TextRenderInfo
+emptyTextRenderInfo fgColor = TextRenderInfo fgColor 0 0 []
 
 type FontIndex   = Int
 
 -- | Runs the string parser
-parseString :: Config -> String -> Either ParseError [Seg]
-parseString c = runParser (fmap concat stringParser) (emptyFormat c) mempty
+parseString :: ParseState -> String -> Either ParseError [Seg]
+parseString initial =
+  runParser (fmap concat stringParser) initial mempty
 
 allParsers :: Parser [Seg]
 allParsers = textParser
@@ -91,7 +123,7 @@ stringParser = manyTill allParsers eof
 -- | Parses a maximal string without markup.
 textParser :: Parser [Seg]
 textParser = do
-  state <- getState
+  state@ParseState { formatState = format, commands } <- getState
   s <- many1 $
        noneOf "<" <|>
          try (notFollowedBy' (char '<')
@@ -105,7 +137,36 @@ textParser = do
                 try (string "/fn>") <|>
                 try (string "/box>") <|>
                 string "/fc>"))
-  return [(Text s, state)]
+
+  let sub = runParser templateStringParser state mempty s
+      widget = Text s
+  return $ case sub of
+    Left _ ->
+      [ Seg { runnable = Nothing, format, widget } ]
+
+    Right (com, prefix, suffix) ->
+      [ Seg { runnable = Just (r, prefix, suffix), format, widget } ]
+        where r = fromMaybe (Run (Com com [] [] 10)) $
+                  find ((==) com . alias) commands
+
+allTillSep :: String -> Parser String
+allTillSep = many . noneOf
+
+-- | Parses the output template string
+templateStringParser :: Parser (String,String,String)
+templateStringParser = do
+  ParseState { sepChar } <- getState
+  s   <- allTillSep sepChar
+  com <- templateCommandParser
+  ss  <- allTillSep sepChar
+  return (com, s, ss)
+
+-- | Parses the command part of the template string
+templateCommandParser :: Parser String
+templateCommandParser = do
+  ParseState { sepChar } <- getState
+  let chr = char (head sepChar)
+  between chr chr (allTillSep sepChar)
 
 -- | Parse a "raw" tag, which we use to prevent other tags from creeping in.
 -- The format here is net-string-esque: a literal "<raw=" followed by a
@@ -114,16 +175,16 @@ textParser = do
 -- then a literal "/>".
 rawParser :: Parser [Seg]
 rawParser = do
-  state <- getState
+  format <- formatState <$> getState
   string "<raw="
   lenstr <- many1 digit
   char ':'
   case reads lenstr of
     [(len,[])] -> do
       guard ((len :: Integer) <= fromIntegral (maxBound :: Int))
-      s <- count (fromIntegral len) anyChar
+      widget <- Text <$> count (fromIntegral len) anyChar
       string "/>"
-      return [(Text s, state)]
+      return [Seg { widget, format, runnable = Nothing }]
     _ -> mzero
 
 -- | Wrapper for notFollowedBy that returns the result of the first parser.
@@ -136,14 +197,14 @@ notFollowedBy' p e = do x <- p
 
 iconParser :: Parser [Seg]
 iconParser = do
-  state <- getState
+  format <- formatState <$> getState
   string "<icon="
-  i <- manyTill (noneOf ">") (try (string "/>"))
-  return [(Icon i, state)]
+  widget <- Icon <$> manyTill (noneOf ">") (try (string "/>"))
+  return [Seg { widget, format, runnable = Nothing }]
 
 actionParser :: Parser [Seg]
 actionParser = do
-  act <- actions <$> getState
+  act <- actions . formatState <$> getState
   string "<action="
   command <- choice [between (char '`') (char '`') (many1 (noneOf "`")),
                    many1 (noneOf ">")]
@@ -153,7 +214,7 @@ actionParser = do
       a' = case act of
         Nothing -> Just [a]
         Just act' -> Just $ a : act'
-  modifyState (\s -> s { actions = a' })
+  modifyState (\s -> s { formatState = (formatState s) { actions = a' } })
   s <- manyTill allParsers (try $ string "</action>")
   return (concat s)
 
@@ -163,26 +224,27 @@ toButtons = map (\x -> read [x])
 -- | Parsers a string wrapped in a color specification.
 colorParser :: Parser [Seg]
 colorParser = do
-  (TextRenderInfo _ _ _ bs) <- textRenderInfo <$> getState
+  oldRenderInfo@(TextRenderInfo _ _ _ bs) <- textRenderInfo . formatState <$> getState
   c <- between (string "<fc=") (string ">") colors
   let colorParts = break (==':') c
       (ot,ob) = case break (==',') (Prelude.drop 1 $ snd colorParts) of
              (top,',':btm) -> (top, btm)
              (top,      _) -> (top, top)
       renderInfo = TextRenderInfo (fst colorParts) (fromMaybe (-1) $ readMaybe ot) (fromMaybe (-1) $ readMaybe ob) bs
-  modifyState (\s -> s { textRenderInfo = renderInfo })
+  modifyState (\st -> st { formatState = (formatState st) { textRenderInfo = renderInfo } })
   s <- manyTill allParsers (try $ string "</fc>")
+  modifyState (\st -> st { formatState = (formatState st) { textRenderInfo = oldRenderInfo } })
   return (concat s)
 
 -- | Parses a string wrapped in a box specification.
 boxParser :: Parser [Seg]
 boxParser = do
-  TextRenderInfo cs ot ob bs <- textRenderInfo <$> getState
+  TextRenderInfo cs ot ob bs <- textRenderInfo . formatState <$> getState
   c <- between (string "<box") (string ">") (option "" (many1 (alphaNum <|> char '=' <|> char ' ' <|> char '#' <|> char ',')))
   let b = Box BBFull (BoxOffset C 0) 1 cs (BoxMargins 0 0 0 0)
       g = boxReader b (words c)
       renderInfo = TextRenderInfo cs ot ob (g : bs)
-  modifyState (\s -> s { textRenderInfo = renderInfo })
+  modifyState (\s -> s { formatState = (formatState s) { textRenderInfo = renderInfo } })
   s <- manyTill allParsers (try $ string "</box>")
   return (concat s)
 
@@ -219,7 +281,7 @@ fontParser :: Parser [Seg]
 fontParser = do
   f <- between (string "<fn=") (string ">") colors
   let fontNum = fromMaybe 0 $ readMaybe f
-  modifyState (\s -> s { fontIndex = fontNum })
+  modifyState (\s -> s { formatState = (formatState s) { fontIndex = fontNum } })
   s <- manyTill allParsers (try $ string "</fn>")
   return (concat s)
 

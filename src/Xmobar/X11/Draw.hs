@@ -57,9 +57,9 @@ drawInWin wr@(Rectangle _ _ wid ht) ~[left,center,right] = do
       (w,(fs,vs)) = (window &&& fontListS &&& verticalOffsets) r
       strLn = liftIO . mapM getWidth
       iconW i = maybe 0 B.width (lookup i $ iconS r)
-      getWidth (Text s, Format { textRenderInfo, fontIndex }) =
+      getWidth Seg { widget = Text s, format = Format { textRenderInfo, fontIndex } } =
         textWidth d (safeIndex fs fontIndex) s >>= \tw -> return (Text s,textRenderInfo,fontIndex,fi tw)
-      getWidth (Icon s, Format { textRenderInfo, fontIndex }) = return (Icon s,textRenderInfo,fontIndex,fi $ iconW s)
+      getWidth Seg { widget = Icon s, format = Format { textRenderInfo, fontIndex } } = return (Icon s,textRenderInfo,fontIndex,fi $ iconW s)
 
   p <- liftIO $ createPixmap d w wid ht
                          (defaultDepthOfScreen (defaultScreenOfDisplay d))
