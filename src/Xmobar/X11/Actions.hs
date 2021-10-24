@@ -18,7 +18,7 @@ import Text.Regex (Regex, subRegex, mkRegex, matchRegex)
 import Graphics.X11.Types (Button)
 
 data Action = Spawn [Button] String
-                deriving (Eq)
+  deriving (Eq, Show)
 
 runAction :: Action -> IO ()
 runAction (Spawn _ s) = void $ system (s ++ "&")

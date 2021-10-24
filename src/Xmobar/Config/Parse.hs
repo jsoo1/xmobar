@@ -88,7 +88,7 @@ parseConfig defaultConfig =
       pBdColor = strField borderColor "borderColor"
       pSepChar = strField sepChar "sepChar"
       pAlignSep = strField alignSep "alignSep"
-      pTemplate = strField template "template"
+      pTemplate = fmap (fmap Unparsed) (strField template "template")
 
       pTextOffset = readField textOffset "textOffset"
       pTextOffsets = readIntList textOffsets "textOffsets"

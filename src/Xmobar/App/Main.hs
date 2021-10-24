@@ -1,3 +1,5 @@
+{-# LANGUAGE NamedFieldPuns #-}
+
 ------------------------------------------------------------------------------
 -- |
 -- Module: Xmobar.App.Main
@@ -17,17 +19,19 @@
 
 module Xmobar.App.Main (xmobar, xmobarMain, configFromArgs) where
 
-import Control.Concurrent.Async (Async, cancel)
+import Control.Concurrent.Async (cancel)
 import Control.Exception (bracket)
 import Control.Monad (unless)
 
 import Data.Foldable (for_)
 import qualified Data.Map as Map
 import Data.List (intercalate)
+import Data.Maybe (mapMaybe)
 import System.Posix.Process (executeFile)
 import System.Environment (getArgs)
+import System.Exit (exitFailure)
 import System.FilePath ((</>), takeBaseName, takeDirectory, takeExtension)
-import Text.Parsec.Error (ParseError)
+import System.IO (hPrint, stderr)
 import Data.List.NonEmpty (NonEmpty(..))
 
 import Graphics.X11.Xlib
@@ -35,43 +39,55 @@ import Graphics.X11.Xlib
 import Xmobar.Config.Types
 import Xmobar.Config.Parse
 import Xmobar.System.Signal (setupSignalHandler, withDeferSignals)
-import Xmobar.Run.Template
+import Xmobar.X11.Parsers hiding (sepChar, alignSep, commands)
 import Xmobar.X11.Types
 import Xmobar.X11.Text
 import Xmobar.X11.Window
 import Xmobar.App.Opts (recompileFlag, verboseFlag, getOpts, doOpts)
-import Xmobar.App.EventLoop (startLoop, startCommand, newRefreshLock, refreshLock)
+import Xmobar.App.EventLoop (startLoop, startCommand, newRefreshLock, refreshLock, Running(..))
 import Xmobar.App.Compile (recompile, trace)
 import Xmobar.App.Config
 import Xmobar.App.Timer (withTimer)
 
 xmobar :: Config -> IO ()
 xmobar conf = withDeferSignals $ do
+  let parseState = emptyParseState' conf
+      tmpl = case template conf of
+        Unparsed s -> parseString parseState s
+        Parsed t   -> pure t
+
+  bar <- case tmpl of
+    Left e  -> hPrint stderr e >> exitFailure
+    Right b -> return b
+
+  let cls = mapMaybe runnable (allSegments bar)
   initThreads
   d <- openDisplay ""
   fs    <- initFont d (font conf)
   fl    <- mapM (initFont d) (additionalFonts conf)
-  cls   <- mapM (parseTemplate (commands conf) (sepChar conf))
-                (splitTemplate (alignSep conf) (template conf))
   sig   <- setupSignalHandler
   refLock <- newRefreshLock
   withTimer (refreshLock refLock) $
-    bracket (mapM (mapM $ startCommand sig) cls)
-            cleanupThreads
-            $ \vars -> do
-      (r,w) <- createWin d fs conf
-      let ic = Map.empty
-          to = textOffset conf
-          ts = textOffsets conf ++ replicate (length fl) (-1)
-      startLoop (XConf d r w (fs :| fl) (to :| ts) ic conf) sig refLock vars
+    bracket (mapM (startCommand sig) cls) cleanupThreads $
+      \vars -> do
+        (r,w) <- createWin d fs conf
+        let ic = Map.empty
+            to = textOffset conf
+            ts = textOffsets conf ++ replicate (length fl) (-1)
+            xconf = XConf d r w (fs :| fl) (to :| ts) ic conf
+        startLoop xconf sig refLock vars
+
+emptyParseState' :: Config -> ParseState
+emptyParseState' conf =
+  emptyParseState (fgColor conf) (sepChar conf) (alignSep conf) (commands conf)
 
 configFromArgs :: Config -> IO Config
 configFromArgs cfg = getArgs >>= getOpts >>= doOpts cfg . fst
 
-cleanupThreads :: [[([Async ()], a)]] -> IO ()
+cleanupThreads :: [Running] -> IO ()
 cleanupThreads vars =
-  for_ (concat vars) $ \(asyncs, _) ->
-    for_ asyncs cancel
+  for_ vars $ \cmd ->
+    for_ (handles cmd) cancel
 
 buildLaunch :: [String] -> Bool -> Bool -> String -> ParseError -> IO ()
 buildLaunch args verb force p e = do

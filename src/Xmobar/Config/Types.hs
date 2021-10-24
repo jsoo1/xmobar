@@ -17,10 +17,12 @@ module Xmobar.Config.Types
       -- $config
       Config (..)
     , XPosition (..), Align (..), Border(..)
+    , ConfigTemplate (..)
     ) where
 
 import Xmobar.Run.Runnable (Runnable(..))
 import Xmobar.Config.Align (Align(..))
+import Xmobar.X11.Parsers (ConfigTemplate(..))
 
 -- $config
 -- Configuration data type
@@ -64,7 +66,7 @@ data Config =
                                     --   (default '%')
            , alignSep :: String     -- ^ Separators for left, center and
                                     --   right text alignment
-           , template :: String     -- ^ The output template
+           , template :: ConfigTemplate -- ^ The output template
            , verbose :: Bool        -- ^ Emit additional debug messages
            } deriving (Read, Show)
 
