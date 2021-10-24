@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 ------------------------------------------------------------------------------
 -- |
@@ -161,10 +162,11 @@ eventLoop tv xc@(XConf d r w fs vos is cfg) as signal = do
       case typ of
          Wakeup -> do
             str <- updateString cfg tv
-            xc' <- updateCache d w is (iconRoot cfg) str >>=
+            let str' = either (\e -> [[(Text ("Parse error: " <> show e), emptyFormat cfg)]]) id str
+            xc' <- updateCache d w is (iconRoot cfg) str' >>=
                      \c -> return xc { iconS = c }
-            as' <- updateActions xc r str
-            runX xc' $ drawInWin r str
+            as' <- updateActions xc r str'
+            runX xc' $ drawInWin r str'
             eventLoop tv xc' as' signal
 
          Reposition ->
@@ -249,22 +251,20 @@ startCommand sig (com,s,ss)
                      return ([a1, a2], var)
     where is = s ++ "Updating..." ++ ss
 
-updateString :: Config -> TVar [String]
-                -> IO [[(Widget, TextRenderInfo, Int, Maybe [Action])]]
+updateString :: Config -> TVar [String] -> IO (Either ParseError [[Seg]])
 updateString conf v = do
   s <- readTVarIO v
   let l:c:r:_ = s ++ repeat ""
-  liftIO $ mapM (parseString conf) [l, c, r]
+  return $ mapM (parseString conf) [l, c, r]
 
-updateActions :: XConf -> Rectangle -> [[(Widget, TextRenderInfo, Int, Maybe [Action])]]
-                 -> IO [([Action], Position, Position)]
+updateActions :: XConf -> Rectangle -> [[Seg]] -> IO [([Action], Position, Position)]
 updateActions conf (Rectangle _ _ wid _) ~[left,center,right] = do
   let (d,fs) = (display &&& fontListS) conf
-      strLn :: [(Widget, TextRenderInfo, Int, Maybe [Action])] -> IO [(Maybe [Action], Position, Position)]
+      strLn :: [Seg] -> IO [(Maybe [Action], Position, Position)]
       strLn  = liftIO . mapM getCoords
       iconW i = maybe 0 Bitmap.width (lookup i $ iconS conf)
-      getCoords (Text s,_,i,a) = textWidth d (safeIndex fs i) s >>= \tw -> return (a, 0, fi tw)
-      getCoords (Icon s,_,_,a) = return (a, 0, fi $ iconW s)
+      getCoords (Text s, Format { fontIndex, actions }) = textWidth d (safeIndex fs fontIndex) s >>= \tw -> return (actions, 0, fi tw)
+      getCoords (Icon s, Format { actions }) = return (actions, 0, fi $ iconW s)
       partCoord off xs = map (\(a, x, x') -> (fromJust a, x, x')) $
                          filter (\(a, _,_) -> isJust a) $
                          scanl (\(_,_,x') (a,_,w') -> (a, x', x' + w'))

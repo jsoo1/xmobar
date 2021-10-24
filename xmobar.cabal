@@ -379,6 +379,8 @@ test-suite XmobarTest
                  Xmobar.Run.Exec
                  Xmobar.App.Timer
                  Xmobar.System.Signal
+                 Xmobar.System.StatFS
+                 Xmobar.System.Kbd
 
   if flag(with_alsa) || flag(all_extensions)
       build-depends: alsa-mixer,
