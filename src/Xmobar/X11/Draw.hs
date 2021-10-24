@@ -50,8 +50,8 @@ fi :: (Integral a, Num b) => a -> b
 fi = fromIntegral
 
 -- | Draws in and updates the window
-drawInWin :: Rectangle -> [[Seg]] -> X ()
-drawInWin wr@(Rectangle _ _ wid ht) ~[left,center,right] = do
+drawInWin :: Rectangle -> Bar -> X ()
+drawInWin wr@(Rectangle _ _ wid ht) Bar { left, center, right } = do
   r <- ask
   let (c,d) = (config &&& display) r
       (w,(fs,vs)) = (window &&& fontListS &&& verticalOffsets) r

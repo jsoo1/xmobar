@@ -18,12 +18,14 @@ module Xmobar.Config.Types
       Config (..)
     , XPosition (..), Align (..), Border(..)
     , SignalChan (..)
+    , ConfigTemplate (..)
     ) where
 
 import qualified Control.Concurrent.STM as STM
 import Xmobar.Run.Runnable (Runnable(..))
 import Xmobar.System.Signal (SignalType)
 import Xmobar.Config.Align (Align(..))
+import Xmobar.X11.Parsers (ConfigTemplate(..))
 
 -- $config
 -- Configuration data type
@@ -67,7 +69,7 @@ data Config =
                                     --   (default '%')
            , alignSep :: String     -- ^ Separators for left, center and
                                     --   right text alignment
-           , template :: String     -- ^ The output template
+           , template :: ConfigTemplate -- ^ The output template
            , verbose :: Bool        -- ^ Emit additional debug messages
            , signal :: SignalChan   -- ^ The signal channel used to send signals to xmobar
            } deriving (Read, Show)

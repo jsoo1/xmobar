@@ -23,6 +23,7 @@ module Xmobar.App.EventLoop
     , startCommand
     , newRefreshLock
     , refreshLock
+    , Running(..)
     ) where
 
 import Prelude hiding (lookup)
@@ -47,7 +48,7 @@ import Xmobar.Config.Types (persistent, position, iconRoot, Config(..), Align(..
 import Xmobar.Run.Exec
 import Xmobar.Run.Runnable
 import Xmobar.X11.Actions
-import Xmobar.X11.Parsers hiding (sepChar, commands)
+import Xmobar.X11.Parsers hiding (sepChar, alignSep, commands)
 import Xmobar.X11.Window
 import Xmobar.X11.Text
 import Xmobar.X11.Draw
@@ -90,14 +91,14 @@ refreshLockT var action = do
 startLoop :: XConf
           -> TMVar SignalType
           -> TMVar ()
-          -> [[([Async ()], TVar String)]]
+          -> [Running]
           -> IO ()
 startLoop xcfg@(XConf _ _ w _ _ _ _) sig pauser vs = do
 #ifdef XFT
     xftInitFtLibrary
 #endif
-    tv <- newTVarIO []
-    _ <- forkIO (handle (handler "checker") (checker tv [] vs sig pauser))
+    tv <- newTVarIO ""
+    _ <- forkIO (handle (handler "checker") (checker tv "" vs sig pauser))
 #ifdef THREADED_RUNTIME
     _ <- forkOS (handle (handler "eventer") (eventer sig))
 #else
@@ -133,26 +134,23 @@ startLoop xcfg@(XConf _ _ w _ _ _ _) sig pauser vs = do
             _ -> return ()
 
 -- | Send signal to eventLoop every time a var is updated
-checker :: TVar [String]
-           -> [String]
-           -> [[([Async ()], TVar String)]]
+checker :: TVar String
+           -> String
+           -> [Running]
            -> TMVar SignalType
            -> TMVar ()
            -> IO ()
 checker tvar ov vs signal pauser = do
       nval <- atomically $ refreshLockT pauser $ do
-              nv <- mapM concatV vs
-              guard (nv /= ov)
-              writeTVar tvar nv
-              return nv
+        mapM (readTVar . chan) vs >>= traverse (\nv -> do
+          guard (ov /= nv)
+          writeTVar tvar nv
+          return nv)
       atomically $ putTMVar signal Wakeup
-      checker tvar nval vs signal pauser
-    where
-      concatV = fmap concat . mapM (readTVar . snd)
-
+      checker tvar (last nval) vs signal pauser
 
 -- | Continuously wait for a signal from a thread or a interrupt handler
-eventLoop :: TVar [String]
+eventLoop :: TVar String
              -> XConf
              -> [([Action], Position, Position)]
              -> TMVar SignalType
@@ -161,12 +159,12 @@ eventLoop tv xc@(XConf d r w fs vos is cfg) as signal = do
       typ <- atomically $ takeTMVar signal
       case typ of
          Wakeup -> do
-            str <- updateString cfg tv
-            let str' = either (parseErrorSegs cfg) id str
-            xc' <- updateCache d w is (iconRoot cfg) str' >>=
-                     \c -> return xc { iconS = c }
-            as' <- updateActions xc r str'
-            runX xc' $ drawInWin r str'
+            x <- parseBar cfg <$> readTVarIO tv
+            let b = either (parseErrorBar cfg) id x
+            c <- updateCache d w is (iconRoot cfg) b
+            let xc' = xc { iconS = c }
+            as' <- updateActions xc r b
+            runX xc' $ drawInWin r b
             eventLoop tv xc' as' signal
 
          Reposition ->
@@ -232,43 +230,45 @@ eventLoop tv xc@(XConf d r w fs vos is cfg) as signal = do
             filter (\(_, from, to) -> x >= from && x <= to) as
           eventLoop tv xc as signal
 
--- | Creates a segment containing parse errors
-parseErrorSegs :: Config -> ParseError -> [[Seg]]
-parseErrorSegs cfg e =
-  [[ Seg { widget = Text ("Parse error: " <> show e)
-         , format = emptyFormat (fgColor cfg)
-         , runnable = Nothing
-         }
-   ]]
+-- | Creates a bar containing parse errors
+parseErrorBar :: Config -> ParseError -> Bar
+parseErrorBar cfg e = Bar
+  [ Seg { widget = Text ("Parse error: " <> show e)
+        , format = emptyFormat (fgColor cfg)
+        , runnable = Nothing
+        }
+  ]
+  mempty
+  mempty
 
 -- $command
 
+-- | A running command.
+data Running = Running { handles :: [Async ()]
+                       , chan :: TVar String
+                       }
+
 -- | Runs a command as an independent thread and returns its Async handles
 -- and the TVar the command will be writing to.
-startCommand :: TMVar SignalType
-             -> (Runnable,String,String)
-             -> IO ([Async ()], TVar String)
+startCommand :: TMVar SignalType -> (Runnable, String, String) -> IO Running
 startCommand sig (com,s,ss)
-    | alias com == "" = do var <- newTVarIO is
-                           atomically $ writeTVar var (s ++ ss)
-                           return ([], var)
-    | otherwise = do var <- newTVarIO is
-                     let cb str = atomically $ writeTVar var (s ++ str ++ ss)
+    | alias com == "" = do chan <- newTVarIO is
+                           atomically $ writeTVar chan (s ++ ss)
+                           return Running { handles = [], chan }
+    | otherwise = do chan <- newTVarIO is
+                     let cb str = atomically $ writeTVar chan (s ++ str ++ ss)
                      a1 <- async $ start com cb
                      a2 <- async $ trigger com $ maybe (return ())
                                                  (atomically . putTMVar sig)
-                     return ([a1, a2], var)
+                     return Running { handles = [ a1, a2 ], chan }
     where is = s ++ "Updating..." ++ ss
 
-updateString :: Config -> TVar [String] -> IO (Either ParseError [[Seg]])
-updateString Config { fgColor, sepChar, commands } v = do
-  s <- readTVarIO v
-  let l:c:r:_ = s ++ repeat ""
-      parseState = emptyParseState fgColor sepChar commands
-  return $ mapM (parseString parseState) [l, c, r]
+parseBar :: Config -> String -> Either ParseError Bar
+parseBar Config { fgColor, sepChar, alignSep, commands } = parseString parseState
+  where parseState = emptyParseState fgColor sepChar alignSep commands
 
-updateActions :: XConf -> Rectangle -> [[Seg]] -> IO [([Action], Position, Position)]
-updateActions conf (Rectangle _ _ wid _) ~[left,center,right] = do
+updateActions :: XConf -> Rectangle -> Bar -> IO [([Action], Position, Position)]
+updateActions conf (Rectangle _ _ wid _) Bar { left, center, right } = do
   let (d,fs) = (display &&& fontListS) conf
       strLn :: [Seg] -> IO [(Maybe [Action], Position, Position)]
       strLn  = liftIO . mapM getCoords
