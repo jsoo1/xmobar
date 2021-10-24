@@ -39,8 +39,8 @@ import Graphics.X11.Xlib
 
 import Xmobar.Config.Types
 import Xmobar.Config.Parse
+import Xmobar.Config.Template.Parse hiding (sepChar, alignSep, commands)
 import Xmobar.System.Signal (setupSignalHandler, withDeferSignals)
-import Xmobar.X11.Parsers hiding (sepChar, alignSep, commands)
 import Xmobar.X11.Types
 import Xmobar.X11.Text
 import Xmobar.X11.Window

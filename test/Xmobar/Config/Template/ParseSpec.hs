@@ -2,7 +2,7 @@
 
 ------------------------------------------------------------------------------
 -- |
--- Module: Xmobar.X11.ParsersSpec
+-- Module: Xmobar.Config.Template.ParseSpec
 -- Copyright: (c) 2021 John Soo
 -- License: BSD3-style (see LICENSE)
 --
@@ -16,7 +16,7 @@
 --
 ------------------------------------------------------------------------------
 
-module Xmobar.X11.ParsersSpec where
+module Xmobar.Config.Template.ParseSpec where
 
 import Data.Maybe
 import Test.Hspec
@@ -25,7 +25,7 @@ import Xmobar.App.Config
 import Xmobar.Run.Exec
 import Xmobar.Run.Runnable
 import Xmobar.Config.Types
-import Xmobar.X11.Parsers hiding (sepChar, alignSep, commands)
+import Xmobar.Config.Template.Parse hiding (sepChar, alignSep, commands)
 
 main :: IO ()
 main = hspec spec
