@@ -17,24 +17,27 @@
 -----------------------------------------------------------------------------
 
 module Xmobar.Config.Template.Parse ( parseString
-                          , runXParser
-                          , allParsers
-                          , emptyParseState
-                          , emptyFormat
-                          , ParseState(..)
-                          , ConfigTemplate(..)
-                          , Bar(..)
-                          , allSegments
-                          , Seg(..)
-                          , Format(..)
-                          , Box(..)
-                          , BoxBorder(..)
-                          , BoxOffset(..)
-                          , BoxMargins(..)
-                          , TextRenderInfo(..)
-                          , Widget(..)
-                          , ParseError
-                          ) where
+                                    , runTemplateParser
+                                    , evalTemplateParser
+                                    , allParsers
+                                    , emptyParseState
+                                    , emptyFormat
+                                    , Parser
+                                    , ParseState(..)
+                                    , ConfigTemplate(..)
+                                    , Bar(..)
+                                    , barParser
+                                    , allSegments
+                                    , Seg(..)
+                                    , Format(..)
+                                    , Box(..)
+                                    , BoxBorder(..)
+                                    , BoxOffset(..)
+                                    , BoxMargins(..)
+                                    , TextRenderInfo(..)
+                                    , Widget(..)
+                                    , ParseError
+                                    ) where
 
 import Xmobar.X11.Actions
 import Xmobar.Config.Align
@@ -42,14 +45,17 @@ import Xmobar.Run.Command
 import Xmobar.Run.Runnable
 import Xmobar.Run.Exec
 
-import Control.Monad (guard, mzero)
 import Data.List (find)
 import Data.Maybe (fromMaybe)
 import Data.Int (Int32)
+import Data.UUID
 import Text.Parsec
 import Text.Read (readMaybe)
 import Graphics.X11.Types (Button)
 import Foreign.C.Types (CInt)
+import System.Random
+
+import Control.Monad.State.Strict as MTL
 
 data Bar = Bar { left, center, right :: [Seg] }
   deriving (Show)
@@ -57,7 +63,7 @@ data Bar = Bar { left, center, right :: [Seg] }
 allSegments :: Bar -> [Seg]
 allSegments Bar { left, center, right } = left <> center <> right
 
-type Parser = Parsec String ParseState
+type Parser a = ParsecT String ParseState (MTL.State StdGen) a
 
 data ParseState = ParseState { formatState :: Format
                              , alignSep :: String
@@ -92,11 +98,12 @@ instance Read ConfigTemplate where
 
 data Seg = Seg { widget :: Widget
                , format :: Format
-               , runnable :: Maybe (Runnable, String, String)
                } deriving (Show)
 
-data Widget = Icon String | Text String
-  deriving (Eq, Show)
+data Widget = Icon String
+            | Text String
+            | Runnable UUID Runnable String String String
+  deriving (Show)
 
 data BoxOffset = BoxOffset Align Int32 deriving (Eq, Show)
 -- margins: Top, Right, Bottom, Left
@@ -123,11 +130,15 @@ emptyTextRenderInfo fgColor = TextRenderInfo fgColor 0 0 []
 type FontIndex   = Int
 
 -- | Runs the string parser
-runXParser :: Parser a -> ParseState -> String -> Either ParseError a
-runXParser p initial = runParser p initial mempty
+runTemplateParser :: Parser a -> StdGen -> ParseState -> String -> (Either ParseError a, StdGen)
+runTemplateParser p g initial s = runParserT p initial mempty s `MTL.runState` g
 
-parseString :: ParseState -> String -> Either ParseError Bar
-parseString = runXParser barParser
+-- | Runs the string parser, discarding the StdGen
+evalTemplateParser :: Parser a -> StdGen -> ParseState -> String -> Either ParseError a
+evalTemplateParser p g initial s = runParserT p initial mempty s `MTL.evalState` g
+
+parseString :: StdGen -> ParseState -> String -> Either ParseError Bar
+parseString = evalTemplateParser barParser
 
 defaultAlign :: String
 defaultAlign = "}{"
@@ -155,7 +166,7 @@ allParsers = textParser
 -- | Parses a maximal string without markup.
 textParser :: Parser [Seg]
 textParser = do
-  state@ParseState { formatState = format, alignSep, commands } <- getState
+  st@ParseState { formatState = format, alignSep, commands } <- getState
   let aligners = if length alignSep == 2 then alignSep else defaultAlign
   s <- many1 $
        noneOf ("<" <> aligners) <|>
@@ -171,16 +182,20 @@ textParser = do
                 try (string "/box>") <|>
                 string "/fc>"))
 
-  let sub = runParser templateStringParser state mempty s
-      widget = Text s
-  return $ case sub of
+  g <- lift get
+  let (sub, g') = runTemplateParser templateStringParser g st s
+  lift (put g')
+  case sub of
     Left _ ->
-      [ Seg { runnable = Nothing, format, widget } ]
+      return [ Seg { widget = Text s, format } ]
 
-    Right (com, prefix, suffix) ->
-      [ Seg { runnable = Just (r, prefix, suffix), format, widget } ]
-        where r = fromMaybe (Run (Com com [] [] 10)) $
-                  find ((==) com . alias) commands
+    Right (com, prefix, suffix) -> do
+      let word32 = lift (MTL.state genWord32)
+          r = fromMaybe (Run (Com com [] [] 10)) $
+              find ((==) com . alias) commands
+
+      i <- fromWords <$> word32 <*> word32 <*> word32 <*> word32
+      return [ Seg { widget = Runnable i r com prefix suffix, format } ]
 
 allTillSep :: String -> Parser String
 allTillSep = many . noneOf
@@ -192,7 +207,7 @@ templateStringParser = do
   s   <- allTillSep sepChar
   com <- templateCommandParser
   ss  <- allTillSep sepChar
-  return (com, s, ss)
+  return (com,s,ss)
 
 -- | Parses the command part of the template string
 templateCommandParser :: Parser String
@@ -217,7 +232,7 @@ rawParser = do
       guard ((len :: Integer) <= fromIntegral (maxBound :: Int))
       widget <- Text <$> count (fromIntegral len) anyChar
       string "/>"
-      return [Seg { widget, format, runnable = Nothing }]
+      return [Seg { widget, format }]
     _ -> mzero
 
 -- | Wrapper for notFollowedBy that returns the result of the first parser.
@@ -233,7 +248,7 @@ iconParser = do
   format <- formatState <$> getState
   string "<icon="
   widget <- Icon <$> manyTill (noneOf ">") (try (string "/>"))
-  return [Seg { widget, format, runnable = Nothing }]
+  return [Seg { widget, format }]
 
 actionParser :: Parser [Seg]
 actionParser = do

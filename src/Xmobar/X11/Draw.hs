@@ -57,9 +57,14 @@ drawInWin wr@(Rectangle _ _ wid ht) Bar { left, center, right } = do
       (w,(fs,vs)) = (window &&& fontListS &&& verticalOffsets) r
       strLn = liftIO . mapM getWidth
       iconW i = maybe 0 B.width (lookup i $ iconS r)
-      getWidth Seg { widget = Text s, format = Format { textRenderInfo, fontIndex } } =
-        textWidth d (safeIndex fs fontIndex) s >>= \tw -> return (Text s,textRenderInfo,fontIndex,fi tw)
-      getWidth Seg { widget = Icon s, format = Format { textRenderInfo, fontIndex } } = return (Icon s,textRenderInfo,fontIndex,fi $ iconW s)
+      getWidth Seg { widget = Text s, format = Format { textRenderInfo, fontIndex } } = do
+        tw <- textWidth d (safeIndex fs fontIndex) s
+        return (Text s,textRenderInfo,fontIndex,fi tw)
+      getWidth Seg { widget = Icon s, format = Format { textRenderInfo, fontIndex } } =
+        return (Icon s,textRenderInfo,fontIndex,fi $ iconW s)
+      getWidth Seg { widget = Runnable _ _ res pref suf, format = Format { textRenderInfo, fontIndex } } = do
+        tw <- textWidth d (safeIndex fs fontIndex) (pref ++ res ++ suf)
+        return (Text (pref ++ res ++ suf),textRenderInfo,fontIndex, fi tw)
 
   p <- liftIO $ createPixmap d w wid ht
                          (defaultDepthOfScreen (defaultScreenOfDisplay d))
@@ -102,6 +107,13 @@ verticalOffset ht (Text t) fontst voffs _
 verticalOffset ht (Icon _) _ _ conf
   | iconOffset conf > -1 = return $ fi (iconOffset conf)
   | otherwise = return $ fi (ht `div` 2) - 1
+verticalOffset ht (Runnable _ _ res pref suf) fontst voffs _
+  | voffs > -1 = return $ fi voffs
+  | otherwise = do
+     let t = pref ++ res ++ suf
+     (as,ds) <- liftIO $ textExtents fontst  t
+     let margin = (fi ht - fi ds - fi as) `div` 2
+     return $ fi as + margin - 1
 
 printString :: Display -> Drawable -> XFont -> GC -> String -> String
             -> Position -> Position -> Position -> Position -> String -> Int -> IO ()
@@ -156,10 +168,14 @@ printStrings dr gc fontlist voffs offs a boxes sl@((s,c,i,l):xs) = do
                    (_,-1)  -> (0, -1)
                    (ot,ob) -> (fromIntegral ht - ot - ob, ob)
   case s of
-    (Text t) -> liftIO $ printString d dr fontst gc fc bc offset valign ay ht' t alph
-    (Icon p) -> liftIO $ maybe (return ())
-                           (B.drawBitmap d dr gc fc bc offset valign)
-                           (lookup p (iconS r))
+    (Text t) ->
+      liftIO $ printString d dr fontst gc fc bc offset valign ay ht' t alph
+    (Icon p) ->
+      liftIO $ maybe (return ())
+                     (B.drawBitmap d dr gc fc bc offset valign)
+                     (lookup p (iconS r))
+    (Runnable _ _ res pref suf) ->
+      liftIO $ printString d dr fontst gc fc bc offset valign ay ht' (pref ++ res ++ suf) alph
   let triBoxes = tBoxes c
       dropBoxes = filter (\(_,b) -> b `notElem` triBoxes) boxes
       boxes' = map (\((x1,_),b) -> ((x1, offset + l), b)) (filter (\(_,b) -> b `elem` triBoxes) boxes)

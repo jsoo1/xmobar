@@ -26,12 +26,12 @@ import Control.Monad (unless)
 import Data.Foldable (for_)
 import qualified Data.Map as Map
 import Data.List (intercalate)
-import Data.Maybe (mapMaybe)
 import System.Posix.Process (executeFile)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.FilePath ((</>), takeBaseName, takeDirectory, takeExtension)
 import System.IO (hPrint, stderr)
+import System.Random (getStdGen)
 import Data.List.NonEmpty (NonEmpty(..))
 
 import Graphics.X11.Xlib
@@ -51,16 +51,21 @@ import Xmobar.App.Timer (withTimer)
 
 xmobar :: Config -> IO ()
 xmobar conf = withDeferSignals $ do
+  g <- getStdGen
   let parseState = emptyParseState' conf
       tmpl = case template conf of
-        Unparsed s -> parseString parseState s
+        Unparsed s -> parseString g parseState s
         Parsed t   -> pure t
 
   bar <- case tmpl of
     Left e  -> hPrint stderr e >> exitFailure
     Right b -> return b
 
-  let cls = mapMaybe runnable (allSegments bar)
+  let runnable Seg { widget } = case widget of
+        Runnable i com initial _ _ -> [(i,com,initial)]
+        _                          -> []
+      cls = foldMap runnable (allSegments bar)
+
   initThreads
   d <- openDisplay ""
   fs    <- initFont d (font conf)
@@ -75,7 +80,7 @@ xmobar conf = withDeferSignals $ do
             to = textOffset conf
             ts = textOffsets conf ++ replicate (length fl) (-1)
             xconf = XConf d r w (fs :| fl) (to :| ts) ic conf
-        startLoop xconf sig refLock vars
+        startLoop bar xconf sig refLock vars
 
 emptyParseState' :: Config -> ParseState
 emptyParseState' conf =

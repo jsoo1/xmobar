@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 ------------------------------------------------------------------------------
@@ -42,6 +43,7 @@ import Data.Bits
 import Data.Map hiding (foldr, map, filter)
 import Data.Maybe (fromJust, isJust)
 import qualified Data.List.NonEmpty as NE
+import Data.UUID (UUID)
 
 import Xmobar.System.Signal
 import Xmobar.Config.Types
@@ -88,17 +90,18 @@ refreshLockT var action = do
     return r
 
 -- | Starts the main event loop and threads
-startLoop :: XConf
+startLoop :: Bar
+          -> XConf
           -> TMVar SignalType
           -> TMVar ()
           -> [Running]
           -> IO ()
-startLoop xcfg@(XConf _ _ w _ _ _ _) sig pauser vs = do
+startLoop bar xcfg@(XConf _ _ w _ _ _ _) sig pauser vs = do
 #ifdef XFT
     xftInitFtLibrary
 #endif
-    tv <- newTVarIO ""
-    _ <- forkIO (handle (handler "checker") (checker tv "" vs sig pauser))
+    tv <- newTVarIO bar
+    _ <- forkIO (handle (handler "checker") (checker tv bar vs sig pauser))
 #ifdef THREADED_RUNTIME
     _ <- forkOS (handle (handler "eventer") (eventer sig))
 #else
@@ -134,23 +137,30 @@ startLoop xcfg@(XConf _ _ w _ _ _ _) sig pauser vs = do
             _ -> return ()
 
 -- | Send signal to eventLoop every time a var is updated
-checker :: TVar String
-           -> String
+checker :: TVar Bar
+           -> Bar
            -> [Running]
            -> TMVar SignalType
            -> TMVar ()
            -> IO ()
 checker tvar ov vs signal pauser = do
       nval <- atomically $ refreshLockT pauser $ do
-        mapM (readTVar . chan) vs >>= traverse (\nv -> do
-          guard (ov /= nv)
+        mapM (readTVar . chan) vs >>= traverse (\(i,new) -> do
+          let updateSeg s@Seg { widget } = case widget of
+                Runnable i' x old pref suf
+                  | i == i' && old /= new -> s { widget = Runnable i x new pref suf }
+                _                       -> s
+              update' Bar { left, center, right } =
+                Bar (fmap updateSeg left) (fmap updateSeg center) (fmap updateSeg right)
+              nv = update' ov
+
           writeTVar tvar nv
           return nv)
       atomically $ putTMVar signal Wakeup
       checker tvar (last nval) vs signal pauser
 
 -- | Continuously wait for a signal from a thread or a interrupt handler
-eventLoop :: TVar String
+eventLoop :: TVar Bar
              -> XConf
              -> [([Action], Position, Position)]
              -> TMVar SignalType
@@ -159,8 +169,7 @@ eventLoop tv xc@(XConf d r w fs vos is cfg) as signal = do
       typ <- atomically $ takeTMVar signal
       case typ of
          Wakeup -> do
-            x <- parseBar cfg <$> readTVarIO tv
-            let b = either (parseErrorBar cfg) id x
+            b <- readTVarIO tv
             c <- updateCache d w is (iconRoot cfg) b
             let xc' = xc { iconS = c }
             as' <- updateActions xc r b
@@ -230,42 +239,31 @@ eventLoop tv xc@(XConf d r w fs vos is cfg) as signal = do
             filter (\(_, from, to) -> x >= from && x <= to) as
           eventLoop tv xc as signal
 
--- | Creates a bar containing parse errors
-parseErrorBar :: Config -> ParseError -> Bar
-parseErrorBar cfg e = Bar
-  [ Seg { widget = Text ("Parse error: " <> show e)
-        , format = emptyFormat (fgColor cfg)
-        , runnable = Nothing
-        }
-  ]
-  mempty
-  mempty
-
 -- $command
 
 -- | A running command.
 data Running = Running { handles :: [Async ()]
-                       , chan :: TVar String
+                       , chan :: TVar (UUID, String)
                        }
 
 -- | Runs a command as an independent thread and returns its Async handles
 -- and the TVar the command will be writing to.
-startCommand :: TMVar SignalType -> (Runnable, String, String) -> IO Running
-startCommand sig (com,s,ss)
-    | alias com == "" = do chan <- newTVarIO is
-                           atomically $ writeTVar chan (s ++ ss)
+startCommand :: TMVar SignalType -> (UUID,Runnable,String) -> IO Running
+startCommand sig (i,com,initial)
+    | alias com == "" = do chan <- newTVarIO (i, is initial)
+                           atomically $ writeTVar chan (i, mempty)
                            return Running { handles = [], chan }
-    | otherwise = do chan <- newTVarIO is
-                     let cb str = atomically $ writeTVar chan (s ++ str ++ ss)
-                     a1 <- async $ start com cb
-                     a2 <- async $ trigger com $ maybe (return ())
-                                                 (atomically . putTMVar sig)
-                     return Running { handles = [ a1, a2 ], chan }
-    where is = s ++ "Updating..." ++ ss
 
-parseBar :: Config -> String -> Either ParseError Bar
-parseBar Config { fgColor, sepChar, alignSep, commands } = parseString parseState
-  where parseState = emptyParseState fgColor sepChar alignSep commands
+    | otherwise       = do chan <- newTVarIO (i, is initial)
+                           let cb = atomically . writeTVar chan . (i,)
+
+                           a1 <- async $ start com cb
+                           a2 <- async $ trigger com $ maybe (return ()) (atomically . putTMVar sig)
+                           return Running { handles = [ a1, a2 ], chan }
+
+    where is x = "Updating " <> x <> "..."
+
+
 
 updateActions :: XConf -> Rectangle -> Bar -> IO [([Action], Position, Position)]
 updateActions conf (Rectangle _ _ wid _) Bar { left, center, right } = do
@@ -273,7 +271,12 @@ updateActions conf (Rectangle _ _ wid _) Bar { left, center, right } = do
       strLn :: [Seg] -> IO [(Maybe [Action], Position, Position)]
       strLn  = liftIO . mapM getCoords
       iconW i = maybe 0 Bitmap.width (lookup i $ iconS conf)
-      getCoords Seg { widget = Text s, format = Format { fontIndex, actions } } = textWidth d (safeIndex fs fontIndex) s >>= \tw -> return (actions, 0, fi tw)
+      getCoords Seg { widget = Text s, format = Format { fontIndex, actions } } = do
+        tw <- textWidth d (safeIndex fs fontIndex) s
+        return (actions, 0, fi tw)
+      getCoords Seg { widget = Runnable _ _ s pref suf, format = Format { fontIndex, actions } } = do
+        tw <- textWidth d (safeIndex fs fontIndex) (pref <> s <> suf)
+        return (actions, 0, fi tw)
       getCoords Seg { widget = Icon s, format = Format { actions } } = return (actions, 0, fi $ iconW s)
       partCoord off xs = map (\(a, x, x') -> (fromJust a, x, x')) $
                          filter (\(a, _,_) -> isJust a) $
