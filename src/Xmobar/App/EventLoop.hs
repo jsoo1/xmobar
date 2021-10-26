@@ -49,7 +49,6 @@ import Xmobar.System.Signal
 import Xmobar.Config.Types
 import Xmobar.Config.Template.Parse hiding (sepChar, alignSep, commands)
 import Xmobar.Run.Exec
-import Xmobar.Run.Runnable
 import Xmobar.X11.Actions
 import Xmobar.X11.Window
 import Xmobar.X11.Text
@@ -146,18 +145,33 @@ checker :: TVar Bar
 checker tvar ov vs signal pauser = do
       nval <- atomically $ refreshLockT pauser $ do
         mapM (readTVar . chan) vs >>= traverse (\(i,new) -> do
-          let updateSeg s@Seg { widget } = case widget of
-                Runnable i' x old pref suf
-                  | i == i' && old /= new -> s { widget = Runnable i x new pref suf }
-                _                       -> s
-              update' Bar { left, center, right } =
-                Bar (fmap updateSeg left) (fmap updateSeg center) (fmap updateSeg right)
-              nv = update' ov
-
+          let nv = updateBar i new ov
           writeTVar tvar nv
           return nv)
       atomically $ putTMVar signal Wakeup
       checker tvar (last nval) vs signal pauser
+
+updateBar :: UUID -> String -> Bar -> Bar
+updateBar i res bar@Bar { left, center, right } =
+  case (l2, c2, r2) of
+    (s@Seg { widget = Runnable rw }:segs,_,_) ->
+      bar { left   = l1 <> (s { widget = Runnable rw { res } } : segs) }
+
+    (_,s@Seg { widget = Runnable rw }:segs,_) ->
+      bar { center = c1 <> (s { widget = Runnable rw { res } } : segs) }
+
+    (_,_,s@Seg { widget = Runnable rw }:segs) ->
+      bar { right  = r1 <> (s { widget = Runnable rw { res } } : segs) }
+
+    _ -> bar
+
+  where
+    (l1, l2) = break isRunnable left
+    (c1, c2) = break isRunnable center
+    (r1, r2) = break isRunnable right
+
+    isRunnable Seg { widget = Runnable rw } = i == runnableId rw
+    isRunnable _ = False
 
 -- | Continuously wait for a signal from a thread or a interrupt handler
 eventLoop :: TVar Bar
@@ -248,14 +262,14 @@ data Running = Running { handles :: [Async ()]
 
 -- | Runs a command as an independent thread and returns its Async handles
 -- and the TVar the command will be writing to.
-startCommand :: TMVar SignalType -> (UUID,Runnable,String) -> IO Running
-startCommand sig (i,com,initial)
-    | alias com == "" = do chan <- newTVarIO (i, is initial)
-                           atomically $ writeTVar chan (i, mempty)
+startCommand :: TMVar SignalType -> RunnableWidget -> IO Running
+startCommand sig RunnableWidget { runnableId, com, res }
+    | alias com == "" = do chan <- newTVarIO (runnableId, is res)
+                           atomically $ writeTVar chan (runnableId, mempty)
                            return Running { handles = [], chan }
 
-    | otherwise       = do chan <- newTVarIO (i, is initial)
-                           let cb = atomically . writeTVar chan . (i,)
+    | otherwise       = do chan <- newTVarIO (runnableId, is res)
+                           let cb = atomically . writeTVar chan . (runnableId,)
 
                            a1 <- async $ start com cb
                            a2 <- async $ trigger com $ maybe (return ()) (atomically . putTMVar sig)
@@ -274,8 +288,8 @@ updateActions conf (Rectangle _ _ wid _) Bar { left, center, right } = do
       getCoords Seg { widget = Text s, format = Format { fontIndex, actions } } = do
         tw <- textWidth d (safeIndex fs fontIndex) s
         return (actions, 0, fi tw)
-      getCoords Seg { widget = Runnable _ _ s pref suf, format = Format { fontIndex, actions } } = do
-        tw <- textWidth d (safeIndex fs fontIndex) (pref <> s <> suf)
+      getCoords Seg { widget = Runnable RunnableWidget { res, pref, suf }, format = Format { fontIndex, actions } } = do
+        tw <- textWidth d (safeIndex fs fontIndex) (pref <> res <> suf)
         return (actions, 0, fi tw)
       getCoords Seg { widget = Icon s, format = Format { actions } } = return (actions, 0, fi $ iconW s)
       partCoord off xs = map (\(a, x, x') -> (fromJust a, x, x')) $

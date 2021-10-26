@@ -62,7 +62,7 @@ drawInWin wr@(Rectangle _ _ wid ht) Bar { left, center, right } = do
         return (Text s,textRenderInfo,fontIndex,fi tw)
       getWidth Seg { widget = Icon s, format = Format { textRenderInfo, fontIndex } } =
         return (Icon s,textRenderInfo,fontIndex,fi $ iconW s)
-      getWidth Seg { widget = Runnable _ _ res pref suf, format = Format { textRenderInfo, fontIndex } } = do
+      getWidth Seg { widget = Runnable RunnableWidget { res, pref, suf }, format = Format { textRenderInfo, fontIndex } } = do
         tw <- textWidth d (safeIndex fs fontIndex) (pref ++ res ++ suf)
         return (Text (pref ++ res ++ suf),textRenderInfo,fontIndex, fi tw)
 
@@ -107,7 +107,7 @@ verticalOffset ht (Text t) fontst voffs _
 verticalOffset ht (Icon _) _ _ conf
   | iconOffset conf > -1 = return $ fi (iconOffset conf)
   | otherwise = return $ fi (ht `div` 2) - 1
-verticalOffset ht (Runnable _ _ res pref suf) fontst voffs _
+verticalOffset ht (Runnable RunnableWidget { res, pref, suf }) fontst voffs _
   | voffs > -1 = return $ fi voffs
   | otherwise = do
      let t = pref ++ res ++ suf
@@ -174,7 +174,7 @@ printStrings dr gc fontlist voffs offs a boxes sl@((s,c,i,l):xs) = do
       liftIO $ maybe (return ())
                      (B.drawBitmap d dr gc fc bc offset valign)
                      (lookup p (iconS r))
-    (Runnable _ _ res pref suf) ->
+    (Runnable RunnableWidget { res, pref, suf }) ->
       liftIO $ printString d dr fontst gc fc bc offset valign ay ht' (pref ++ res ++ suf) alph
   let triBoxes = tBoxes c
       dropBoxes = filter (\(_,b) -> b `notElem` triBoxes) boxes
