@@ -22,7 +22,7 @@ module Xmobar.App.Main (xmobar, xmobarMain, configFromArgs) where
 import Control.Concurrent.Async (cancel)
 import Control.Concurrent.STM (newEmptyTMVarIO)
 import Control.Exception (bracket)
-import Control.Monad (unless)
+import Control.Monad (unless, (>=>))
 
 import Data.Foldable (for_)
 import qualified Data.Map as Map
@@ -54,18 +54,14 @@ import Xmobar.App.Timer (withTimer)
 xmobar :: Config -> IO ()
 xmobar conf = withDeferSignals $ do
   g <- getStdGen
-  let parseState = emptyParseState' conf
-      tmpl = case template conf of
-        Unparsed s -> parseString g parseState s
+  let tmpl = case template conf of
+        Unparsed s -> parseString g (emptyParseState' conf) s
         Parsed t   -> pure t
 
-  bar <- case tmpl of
-    Left e  -> hPrint stderr e >> exitFailure
-    Right b -> return b
+  bar <- either (hPrint stderr >=> const exitFailure) pure tmpl
 
-  let runnable Seg { widget } = case widget of
-        Runnable i com initial _ _ -> [(i,com,initial)]
-        _                          -> []
+  let runnable Seg { widget = Runnable rw } = [rw]
+      runnable _                            = []
       cls = foldMap runnable (allSegments bar)
 
   initThreads
