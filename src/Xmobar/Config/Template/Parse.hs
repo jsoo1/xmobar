@@ -36,6 +36,7 @@ module Xmobar.Config.Template.Parse ( parseString
                                     , BoxMargins(..)
                                     , TextRenderInfo(..)
                                     , Widget(..)
+                                    , RunnableWidget(..)
                                     , ParseError
                                     ) where
 
@@ -103,8 +104,13 @@ data Seg = Seg { widget :: Widget
 data Widget = Icon String
             | Text String
             | Hspace Int32
-            | Runnable UUID Runnable String String String
+            | Runnable RunnableWidget
   deriving (Show)
+
+data RunnableWidget = RunnableWidget { runnableId :: UUID
+                                     , com :: Runnable
+                                     , res , suf , pref :: String
+                                     } deriving (Show)
 
 data BoxOffset = BoxOffset Align Int32 deriving (Eq, Show)
 -- margins: Top, Right, Bottom, Left
@@ -168,7 +174,7 @@ allParsers = textParser
 -- | Parses a maximal string without markup.
 textParser :: Parser [Seg]
 textParser = do
-  st@ParseState { formatState = format, alignSep, commands } <- getState
+  st@ParseState { formatState = format, alignSep } <- getState
   let aligners = if length alignSep == 2 then alignSep else defaultAlign
   s <- many1 $
        noneOf ("<" <> aligners) <|>
@@ -186,31 +192,32 @@ textParser = do
                 string "/fc>"))
 
   g <- lift get
-  let (sub, g') = runTemplateParser templateStringParser g st s
+  let (rw, g') = runTemplateParser runnableWidgetParser g st s
   lift (put g')
-  case sub of
-    Left _ ->
-      return [ Seg { widget = Text s, format } ]
-
-    Right (com, prefix, suffix) -> do
-      let word32 = lift (MTL.state genWord32)
-          r = fromMaybe (Run (Com com [] [] 10)) $
-              find ((==) com . alias) commands
-
-      i <- fromWords <$> word32 <*> word32 <*> word32 <*> word32
-      return [ Seg { widget = Runnable i r com prefix suffix, format } ]
+  return [ Seg { widget = either (const (Text s)) Runnable rw
+               , format
+               }
+         ]
 
 allTillSep :: String -> Parser String
 allTillSep = many . noneOf
 
--- | Parses the output template string
-templateStringParser :: Parser (String,String,String)
-templateStringParser = do
-  ParseState { sepChar } <- getState
-  s   <- allTillSep sepChar
-  com <- templateCommandParser
-  ss  <- allTillSep sepChar
-  return (com,s,ss)
+-- | Parses the output template string for a runnable widget
+runnableWidgetParser :: Parser RunnableWidget
+runnableWidgetParser = do
+  ParseState { sepChar, commands } <- getState
+
+  pref <- allTillSep sepChar
+  res  <- templateCommandParser
+  suf  <- allTillSep sepChar
+
+  let word32 = lift (MTL.state genWord32)
+      com = fromMaybe (Run (Com res [] [] 10))
+            $ find ((==) res . alias) commands
+
+  runnableId <- fromWords <$> word32 <*> word32 <*> word32 <*> word32
+
+  return RunnableWidget { runnableId, com, res, pref, suf }
 
 -- | Parses the command part of the template string
 templateCommandParser :: Parser String

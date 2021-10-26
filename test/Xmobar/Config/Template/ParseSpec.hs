@@ -58,7 +58,7 @@ spec = do
         length actions' `shouldBe` 1
 
       it "parses command aliases in a segment" $ do
-        let runnable Seg { widget = (Runnable _ r _ _ _) } = [alias r]
+        let runnable Seg { widget = Runnable RunnableWidget { com } } = [alias com]
             runnable _                                     = []
             resRunnables = fmap (foldMap runnable) segments
         resRunnables `shouldBe` Right ["uname", "theDate"]
@@ -70,9 +70,9 @@ spec = do
         let prsL = concat <$> manyTill allParsers (char '}')
             prsC = concat <$> manyTill allParsers (char '{')
             prsR = concat <$> manyTill allParsers eof
-            prs = (,) <$> prsL <*> prsC
+            prs = (,,) <$> prsL <*> prsC <*> prsR
             res = evalTemplateParser prs g defaultParseState alignedTemplate
-        res `shouldSatisfy` \r -> case r of Right ([_], [_]) -> True; _ -> False
+        res `shouldSatisfy` \r -> case r of Right ([_], [_], [_]) -> True; _ -> False
 
       it "splits the template into center, left and right" $ do
         let res = parseString g defaultParseState alignedTemplate
