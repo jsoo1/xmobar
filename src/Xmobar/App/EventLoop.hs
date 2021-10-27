@@ -152,16 +152,16 @@ checker tvar ov vs signal pauser = do
       checker tvar (last nval) vs signal pauser
 
 updateBar :: UUID -> String -> Bar -> Bar
-updateBar i res bar@Bar { left, center, right } =
+updateBar i val bar@Bar { left, center, right } =
   case (l2, c2, r2) of
     (s@Seg { widget = Runnable rw }:segs,_,_) ->
-      bar { left   = l1 <> (s { widget = Runnable rw { res } } : segs) }
+      bar { left   = l1 <> (s { widget = Runnable rw { val } } : segs) }
 
     (_,s@Seg { widget = Runnable rw }:segs,_) ->
-      bar { center = c1 <> (s { widget = Runnable rw { res } } : segs) }
+      bar { center = c1 <> (s { widget = Runnable rw { val } } : segs) }
 
     (_,_,s@Seg { widget = Runnable rw }:segs) ->
-      bar { right  = r1 <> (s { widget = Runnable rw { res } } : segs) }
+      bar { right  = r1 <> (s { widget = Runnable rw { val } } : segs) }
 
     _ -> bar
 
@@ -263,12 +263,12 @@ data Running = Running { handles :: [Async ()]
 -- | Runs a command as an independent thread and returns its Async handles
 -- and the TVar the command will be writing to.
 startCommand :: TMVar SignalType -> RunnableWidget -> IO Running
-startCommand sig RunnableWidget { runnableId, com, res }
-    | alias com == "" = do chan <- newTVarIO (runnableId, is res)
+startCommand sig RunnableWidget { runnableId, com, val }
+    | alias com == "" = do chan <- newTVarIO (runnableId, is val)
                            atomically $ writeTVar chan (runnableId, mempty)
                            return Running { handles = [], chan }
 
-    | otherwise       = do chan <- newTVarIO (runnableId, is res)
+    | otherwise       = do chan <- newTVarIO (runnableId, is val)
                            let cb = atomically . writeTVar chan . (runnableId,)
 
                            a1 <- async $ start com cb
@@ -288,8 +288,8 @@ updateActions conf (Rectangle _ _ wid _) Bar { left, center, right } = do
       getCoords Seg { widget = Text s, format = Format { fontIndex, actions } } = do
         tw <- textWidth d (safeIndex fs fontIndex) s
         return (actions, 0, fi tw)
-      getCoords Seg { widget = Runnable RunnableWidget { res, pref, suf }, format = Format { fontIndex, actions } } = do
-        tw <- textWidth d (safeIndex fs fontIndex) (pref <> res <> suf)
+      getCoords Seg { widget = Runnable RunnableWidget { val }, format = Format { fontIndex, actions } } = do
+        tw <- textWidth d (safeIndex fs fontIndex) val
         return (actions, 0, fi tw)
       getCoords Seg { widget = Icon s, format = Format { actions } } = return (actions, 0, fi $ iconW s)
       getCoords Seg { widget = Hspace w, format = Format { actions } } = return (actions, 0, fi w)
