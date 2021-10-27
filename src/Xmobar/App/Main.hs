@@ -36,6 +36,8 @@ import Data.List.NonEmpty (NonEmpty(..))
 
 import Graphics.X11.Xlib
 
+import Text.Parsec (ParseError)
+
 import Xmobar.Config.Types
 import Xmobar.Config.Parse
 import Xmobar.Config.Template.Parse hiding (sepChar, alignSep, commands)
