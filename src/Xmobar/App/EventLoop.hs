@@ -46,10 +46,10 @@ import qualified Data.List.NonEmpty as NE
 import Data.UUID (UUID)
 
 import Xmobar.System.Signal
+import Xmobar.Config.Actions
 import Xmobar.Config.Types
 import Xmobar.Config.Template.Parse hiding (sepChar, alignSep, commands)
 import Xmobar.Run.Exec
-import Xmobar.X11.Actions
 import Xmobar.X11.Window
 import Xmobar.X11.Text
 import Xmobar.X11.Draw

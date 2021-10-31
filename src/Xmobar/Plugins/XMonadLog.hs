@@ -28,7 +28,7 @@ import Codec.Binary.UTF8.String as UTF8
 #endif
 import Foreign.C (CChar)
 import Xmobar.X11.Events (nextEvent')
-import Xmobar.X11.Actions (stripActions)
+import Xmobar.Config.Actions (stripActions)
 
 data XMonadLog = XMonadLog
                | UnsafeXMonadLog

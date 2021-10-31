@@ -18,7 +18,7 @@
 
 module Xmobar.Config.Template.Parse where
 
-import Xmobar.X11.Actions
+import Xmobar.Config.Actions
 import Xmobar.Config.Align
 import Xmobar.Run.Command
 import Xmobar.Run.Runnable
