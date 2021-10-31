@@ -27,7 +27,7 @@ import Xmobar.Run.Exec
 import Xmobar.Run.Runnable
 import Xmobar.Config.Types
 import Xmobar.Config.Template.Parse hiding (sepChar, alignSep, commands)
-import Xmobar.X11.Actions
+import Xmobar.Config.Actions
 
 import System.Random
 

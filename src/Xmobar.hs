@@ -24,6 +24,7 @@ module Xmobar (xmobar
               , Exec (..)
               , Command (..)
               , SignalType (..)
+              , module Xmobar.Config.Actions
               , module Xmobar.Config.Types
               , module Xmobar.Config.Parse
               , module Xmobar.Plugins.BufferedPipeReader
@@ -52,6 +53,7 @@ module Xmobar (xmobar
 import Xmobar.Run.Runnable
 import Xmobar.Run.Exec
 import Xmobar.Run.Command
+import Xmobar.Config.Actions
 import Xmobar.Config.Types
 import Xmobar.Config.Parse
 import Xmobar.Plugins.BufferedPipeReader

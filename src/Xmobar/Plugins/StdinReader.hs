@@ -26,7 +26,7 @@ import System.Exit
 import System.IO
 import System.IO.Error (isEOFError)
 import Xmobar.Run.Exec
-import Xmobar.X11.Actions (stripActions)
+import Xmobar.Config.Actions (stripActions)
 import Control.Exception
 import Control.Monad (forever)
 

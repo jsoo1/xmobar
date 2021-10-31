@@ -101,6 +101,10 @@ library
     hs-source-dirs:  src
 
     exposed-modules: Xmobar,
+                     Xmobar.Config.Actions,
+                     Xmobar.Config.Types,
+                     Xmobar.Config.Parse,
+                     Xmobar.Config.Template.Parse,
                      Xmobar.Plugins.Monitors.Common.Types,
                      Xmobar.Plugins.Monitors.Common.Run,
                      Xmobar.Plugins.Monitors.Common,
@@ -108,9 +112,6 @@ library
 
     other-modules: Paths_xmobar,
                    Xmobar.Config.Align,
-                   Xmobar.Config.Types,
-                   Xmobar.Config.Parse,
-                   Xmobar.Config.Template.Parse,
                    Xmobar.Run.Types,
                    Xmobar.Run.Exec,
                    Xmobar.Run.Command,
@@ -127,7 +128,6 @@ library
                    Xmobar.System.Localize,
                    Xmobar.System.Signal,
                    Xmobar.System.Kbd,
-                   Xmobar.X11.Actions,
                    Xmobar.X11.Events,
                    Xmobar.X11.Types,
                    Xmobar.X11.Text,

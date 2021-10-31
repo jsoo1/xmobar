@@ -10,7 +10,7 @@
 --
 -----------------------------------------------------------------------------
 
-module Xmobar.X11.Actions (Action(..), runAction, stripActions) where
+module Xmobar.Config.Actions (Action(..), runAction, stripActions) where
 
 import System.Process (system)
 import Control.Monad (void)
