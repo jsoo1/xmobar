@@ -244,6 +244,7 @@ actionOpen = do
   acts <- actions . formatState <$> getState
   action <- between (string "<action=") (char '>') $ do
     cmd <- spawnParser
+    skipMany (char ' ')
     btns <- option [1] (string "button=" >> buttonsParser)
     pure (Spawn btns cmd)
 
