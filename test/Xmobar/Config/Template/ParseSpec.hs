@@ -25,11 +25,13 @@ import Text.Parsec
 import Xmobar.App.Config
 import Xmobar.Run.Exec
 import Xmobar.Run.Runnable
-import Xmobar.Config.Types
-import Xmobar.Config.Template.Parse hiding (sepChar, alignSep, commands)
+import Xmobar.Config.Types hiding (commands)
+import Xmobar.Config.Template.Parse hiding (sepChar, alignSep)
 import Xmobar.Config.Actions
-
 import System.Random
+
+import qualified Control.Concurrent.STM as STM
+import qualified Xmobar.Config.Types
 
 main :: IO ()
 main = hspec spec
@@ -37,24 +39,24 @@ main = hspec spec
 spec :: Spec
 spec = do
   let g = mkStdGen 3854207386 -- Randomly chosen
-      defaultParseState = emptyParseState (fgColor defaultConfig) (sepChar defaultConfig) (alignSep defaultConfig) (commands defaultConfig)
+      defaultParseState = emptyParseState
+        (fgColor defaultConfig)
+        (sepChar defaultConfig)
+        (alignSep defaultConfig)
+        (Xmobar.Config.Types.commands defaultConfig)
       (Unparsed defaultTemplate) = template defaultConfig
 
   describe "Template Parsing" $ do
-    context "Unaligned" $ do
-      let unalignedTemplate = "<fc=#00FF00><action=`echo hi`>%uname%</action></fc> * <fc=#FF0000>%theDate%</fc>"
-          res = parseString g defaultParseState unalignedTemplate
+    let unalignedTemplate =
+          "<fc=#00FF00><action=`echo hi`>%uname%</action></fc> * <fc=#FF0000>%theDate%</fc>"
+    context unalignedTemplate $ do
+      let res = parseString g defaultParseState unalignedTemplate
           segments = allSegments <$> res
           runnable Seg { widget = Runnable rw } = [rw]
           runnable _                            = []
 
-      it "succeeds on the default configuration template" $ do
-        let res = parseString g defaultParseState defaultTemplate
-        -- `shouldBe` would fail here because of the Show constraint
-        -- The show constraint is used functionally, so don't derive them
-        either (pure False) (pure True) res
-
-      it "keeps only actions for a given segment" $ do
+      let extraAction = "<action=`echo hi again`>plain</action>"
+      it ("parses extra actions: " <> extraAction) $ do
         let tmpl = unalignedTemplate <> "<action=`echo hi again`>plain</action>"
             res = parseString g defaultParseState tmpl
             segs = allSegments <$> res
@@ -69,18 +71,10 @@ spec = do
         let resRunnables = foldMap (fmap runnableId . runnable) <$> segments
         resRunnables `shouldSatisfy` either (const False) (\ids -> length (nub ids) == length ids)
 
-    context "Aligned" $ do
-      let alignedTemplate = "<fc=#00FF00><action=`echo hi`>%uname%</action></fc>} * {<fc=#FF0000>%theDate%</fc>"
+    let alignedTemplate = "<fc=#00FF00><action=`echo hi`>%uname%</action></fc>} * {<fc=#FF0000>%theDate%</fc>"
+    context alignedTemplate $ do
 
-      it "splits the template on alignSep" $ do
-        let prsL = manyTill segParser (char '}')
-            prsC = manyTill segParser (char '{')
-            prsR = manyTill segParser eof
-            prs = (,,) <$> prsL <*> prsC <*> prsR
-            res = evalParser prs g defaultParseState alignedTemplate
-        res `shouldSatisfy` \r -> case r of Right ([_], [_], [_]) -> True; _ -> False
-
-      it "splits the template into center, left and right" $ do
+      it "Parses into left, right, and center" $ do
         let res = parseString g defaultParseState alignedTemplate
         res `shouldSatisfy` \r -> case r of
           Right Bar { left, center, right } ->
@@ -88,29 +82,41 @@ spec = do
 
           _ -> False
 
+    context defaultTemplate $ do
+      it defaultTemplate $ do
+        let res = parseString g defaultParseState defaultTemplate
+        -- `shouldBe` would fail here because of the Show constraint
+        -- The show constraint is used functionally, so don't derive them
+        either (pure False) (pure True) res
+
   describe "Markup Tags" $ do
     context "<action></action>" $ do
-      it "parses a single action" $ do
-        let tmpl = "<action=`hi`>text</action>"
-            res = evalParser (actionParser textParser) g defaultParseState tmpl
+      let simpleAction = "<action=`hi`>text</action>"
+      it simpleAction $ do
+        let res = evalParser (actionParser textParser) g defaultParseState simpleAction
+        res `shouldSatisfy` either (const False) (== "text")
+
+      let complicatedAction = "<action=`amixer -q set Master toggle` button=1>text</action>"
+      it complicatedAction $ do
+        let res = evalParser (actionParser textParser) g defaultParseState complicatedAction
         res `shouldSatisfy` either (const False) (== "text")
 
     context "<fn></fn>" $ do
-      it "parses a single fn" $ do
-        let tmpl = "<fn=2>text</fn>"
-            res  = evalParser (fnParser textParser) g defaultParseState tmpl
+      let singleFn =  "<fn=2>text</fn>"
+      it singleFn $ do
+        let res  = evalParser (fnParser textParser) g defaultParseState singleFn
         res `shouldSatisfy` either (const False) (== "text")
 
     context "<fc></fc>" $ do
-      it "parses a single fc" $ do
-        let tmpl = "<fc=#AB0,brightblack:0,2>text</fc>"
-            res  = evalParser (fcParser textParser) g defaultParseState tmpl
+      let singleFc = "<fc=#AB0,brightblack:0,2>text</fc>"
+      it singleFc $ do
+        let res  = evalParser (fcParser textParser) g defaultParseState singleFc
         res `shouldSatisfy` either (const False) (== "text")
 
     context "<box></box>" $ do
-      it "parses a single box" $ do
-        let tmpl = "<box type=Bottom color=#4AB width=2>text</box>"
-            res  = evalParser (boxParser textParser) g defaultParseState tmpl
+      let simpleBox = "<box type=Bottom color=#4AB width=2>text</box>"
+      it simpleBox $ do
+        let res  = evalParser (boxParser textParser) g defaultParseState simpleBox
         res `shouldSatisfy` either (const False) (== "text")
 
   describe "Widgets" $ do
@@ -118,7 +124,7 @@ spec = do
         unadorned = "%uname%"
 
     context "Runnable %alias% widgets" $ do
-      it ("parses an adorned \"" <> adorned <> "\"") $ do
+      it (show adorned) $ do
         evalParser (many1 widgetParser) g defaultParseState adorned `shouldSatisfy` either (const False)
           (\widgets -> case widgets of
               [Text "some prefix ", Runnable RunnableWidget { val = "theDate" }, Text " some suffix"] ->
@@ -126,20 +132,20 @@ spec = do
 
               _ -> False)
 
-      it ("parses an unadorned \"" <> unadorned <> "\"") $ do
+      it (show unadorned) $ do
         evalParser runnableParser g defaultParseState unadorned `shouldSatisfy` either (const False)
           (\RunnableWidget { val } -> val == "uname")
 
 
     context "Self-closing Tags" $ do
       context "<raw=/>" $ do
-        it "parses a single raw tag" $ do
-          let tmpl = "<raw=20:iiiiiiiiiiiiiiiiiiii/>"
-          evalParser rawParser g defaultParseState tmpl `shouldSatisfy` either (const False)
-            (== "iiiiiiiiiiiiiiiiiiii")
+        let simpleRaw =  "<raw=20:iiiiiiiiiiiiiiiiiiii/>"
+        it simpleRaw $ do
+          let res = evalParser rawParser g defaultParseState simpleRaw
+          res `shouldSatisfy` either (const False) (== "iiiiiiiiiiiiiiiiiiii")
 
       context "<icon=/>" $ do
-        it "parses a single icon tag" $ do
-          let tmpl = "<icon=/home/example/.icons/example.xbm/>"
-          evalParser iconParser g defaultParseState tmpl `shouldSatisfy` either (const False)
-            (== "/home/example/.icons/example.xbm")
+        let simpleIcon = "<icon=/home/example/.icons/example.xbm/>"
+        it simpleIcon $ do
+          let res = evalParser iconParser g defaultParseState simpleIcon
+          res `shouldSatisfy` either (const False) (== "/home/example/.icons/example.xbm")
