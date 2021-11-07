@@ -175,7 +175,7 @@ library
 
     extra-libraries: Xrandr Xrender
 
-    ghc-options: -funbox-strict-fields -Wall -fno-warn-unused-do-bind
+    ghc-options: -Werror -funbox-strict-fields -Wall -fno-warn-unused-do-bind
 
     build-depends:
       base >= 4.11.0 && < 4.16,
@@ -328,16 +328,16 @@ executable xmobar
                         parsec,
                         xmobar
 
-    ghc-options: -funbox-strict-fields -Wall -fno-warn-unused-do-bind
+    ghc-options: -Werror -funbox-strict-fields -Wall -fno-warn-unused-do-bind
 
     if flag(with_rtsopts)
-       ghc-options: -with-rtsopts=-V0
+       ghc-options: -Werror -with-rtsopts=-V0
 
     if flag(with_threaded)
        -- -threaded is a workaround for 100% CPU busy loop
        -- (http://hackage.haskell.org/trac/ghc/ticket/4934).
        -- See also comments in https://github.com/jaor/xmobar/pull/36
-       ghc-options: -threaded
+       ghc-options: -Werror -threaded
        cpp-options: -DTHREADED_RUNTIME
 
 test-suite XmobarTest
@@ -402,6 +402,6 @@ benchmark xmobarbench
   main-is: main.hs
   hs-source-dirs:
       bench
-  ghc-options: -funbox-strict-fields -Wall -fno-warn-unused-do-bind -O2
+  ghc-options: -Werror -funbox-strict-fields -Wall -fno-warn-unused-do-bind -O2
   build-depends: base, gauge, xmobar, mtl, time
   default-language: Haskell2010
