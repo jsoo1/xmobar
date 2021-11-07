@@ -57,7 +57,7 @@ drawInWin wr@(Rectangle _ _ wid ht) Bar { left, center, right } = do
       (w,(fs,vs)) = (window &&& fontListS &&& verticalOffsets) r
       strLn = liftIO . mapM getWidth
       iconW i = maybe 0 B.width (lookup i $ iconS r)
-      getWidth Seg { widget, format = Format { textRenderInfo, fontIndex } } =
+      getWidth (PlainSeg { widget, format = Format { textRenderInfo, fontIndex } }) =
         case widget of
           Text s -> do
             tw <- textWidth d (safeIndex fs fontIndex) s
@@ -66,9 +66,6 @@ drawInWin wr@(Rectangle _ _ wid ht) Bar { left, center, right } = do
             return (Hspace p,textRenderInfo,fontIndex,fi p)
           Icon s ->
             return (Icon s,textRenderInfo,fontIndex,fi $ iconW s)
-          Runnable RunnableWidget { val } -> do
-            tw <- textWidth d (safeIndex fs fontIndex) val
-            return (Text val,textRenderInfo,fontIndex, fi tw)
 
   p <- liftIO $ createPixmap d w wid ht
                          (defaultDepthOfScreen (defaultScreenOfDisplay d))
@@ -87,9 +84,9 @@ drawInWin wr@(Rectangle _ _ wid ht) Bar { left, center, right } = do
       liftIO $ setForeground d gc bgcolor
       liftIO $ fillRectangle d p gc 0 0 wid ht
     -- write to the pixmap the new string
-    printStrings p gc fs vs 1 L [] =<< strLn left
-    printStrings p gc fs vs 1 R [] =<< strLn right
-    printStrings p gc fs vs 1 C [] =<< strLn center
+    printStrings p gc fs vs 1 L [] =<< strLn (plainSegments =<< left)
+    printStrings p gc fs vs 1 R [] =<< strLn (plainSegments =<< right)
+    printStrings p gc fs vs 1 C [] =<< strLn (plainSegments =<< center)
     -- draw border if requested
     liftIO $ drawBorder (border c) (borderWidth c) d p gc bdcolor wid ht
     -- copy the pixmap with the new string to the window
@@ -112,13 +109,6 @@ verticalOffset ht (Icon _) _ _ conf
   | iconOffset conf > -1 = return $ fi (iconOffset conf)
   | otherwise = return $ fi (ht `div` 2) - 1
 verticalOffset _ (Hspace _) _ voffs _ = return $ fi voffs
-verticalOffset ht (Runnable RunnableWidget { val }) fontst voffs _
-  | voffs > -1 = return $ fi voffs
-  | otherwise = do
-     let t = val
-     (as,ds) <- liftIO $ textExtents fontst  t
-     let margin = (fi ht - fi ds - fi as) `div` 2
-     return $ fi as + margin - 1
 
 printString :: Display -> Drawable -> XFont -> GC -> String -> String
             -> Position -> Position -> Position -> Position -> String -> Int -> IO ()
@@ -180,8 +170,6 @@ printStrings dr gc fontlist voffs offs a boxes sl@((s,c,i,l):xs) = do
                      (B.drawBitmap d dr gc fc bc offset valign)
                      (lookup p (iconS r))
     (Hspace _) -> liftIO $ return ()
-    (Runnable RunnableWidget { val }) ->
-      liftIO $ printString d dr fontst gc fc bc offset valign ay ht' val alph
   let triBoxes = tBoxes c
       dropBoxes = filter (\(_,b) -> b `notElem` triBoxes) boxes
       boxes' = map (\((x1,_),b) -> ((x1, offset + l), b)) (filter (\(_,b) -> b `elem` triBoxes) boxes)

@@ -19,13 +19,14 @@ module Xmobar.X11.Bitmap
 
 import Control.Monad
 import Control.Monad.Trans(MonadIO(..))
-import Data.Map hiding (map, filter)
+import Data.Map hiding (map, mapMaybe, filter)
+import Data.Maybe (mapMaybe)
 import Graphics.X11.Xlib
 import System.Directory (doesFileExist)
 import System.FilePath ((</>))
 import System.Mem.Weak ( addFinalizer )
 import Xmobar.X11.ColorCache
-import Xmobar.Config.Template.Parse (Widget(..), Bar(..), allSegments, Seg(..))
+import Xmobar.Config.Template.Parse
 
 #ifdef XPM
 import Xmobar.X11.XPMFile(readXPMFile)
@@ -56,9 +57,9 @@ data Bitmap = Bitmap { width  :: Dimension
 updateCache :: Display -> Window -> Map FilePath Bitmap -> FilePath ->
                Bar -> IO (Map FilePath Bitmap)
 updateCache dpy win cache iconRoot bar = do
-  let paths = map (\Seg { widget = Icon p } -> p) . filter icons $ allSegments bar
-      icons Seg { widget = Icon _ } = True
-      icons _ = False
+  let paths = mapMaybe icons $ allSegments bar
+      icons (Plain PlainSeg { widget = Icon p }) = Just p
+      icons _ = Nothing
       expandPath path@('/':_) = path
       expandPath path@('.':'/':_) = path
       expandPath path@('.':'.':'/':_) = path
