@@ -33,7 +33,6 @@ import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.FilePath ((</>), takeBaseName, takeDirectory, takeExtension)
 import System.IO (hPrint, stderr)
-import System.Random (getStdGen)
 import Data.List.NonEmpty (NonEmpty(..))
 
 import Graphics.X11.Xlib
@@ -55,9 +54,8 @@ import Xmobar.App.Timer (withTimer)
 
 xmobar :: Config -> IO ()
 xmobar conf = withDeferSignals $ do
-  g <- getStdGen
   let tmpl = case template conf of
-        Unparsed s -> parseString g (emptyParseState' conf) s
+        Unparsed s -> parseString (emptyParseState' conf) s
         Parsed t   -> pure t
 
   bar <- either (hPrint stderr >=> const exitFailure) pure tmpl

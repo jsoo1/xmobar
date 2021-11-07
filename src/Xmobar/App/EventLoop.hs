@@ -44,7 +44,6 @@ import Data.Foldable (foldlM)
 import Data.Map hiding (foldr, map, filter)
 import Data.Maybe (fromJust, isJust)
 import qualified Data.List.NonEmpty as NE
-import Data.UUID (UUID)
 
 import Xmobar.System.Signal
 import Xmobar.Config.Actions
@@ -149,14 +148,14 @@ checker tvar ov vs signal pauser = do
       atomically $ putTMVar signal Wakeup
       checker tvar nval vs signal pauser
 
-updateRunning :: TVar Bar -> Bar -> (UUID, String) -> STM Bar
+updateRunning :: TVar Bar -> Bar -> (String, String) -> STM Bar
 updateRunning tvar ov (i,new) = do
   let nv = updateBar i new ov
   writeTVar tvar nv
   pure nv
 
-updateBar :: UUID -> String -> Bar -> Bar
-updateBar i val bar@Bar { left, center, right } =
+updateBar :: String -> String -> Bar -> Bar
+updateBar alias' val bar@Bar { left, center, right } =
   case (l2, c2, r2) of
     (s@Seg { widget = Runnable rw }:segs,_,_) ->
       bar { left   = l1 <> (s { widget = Runnable rw { val } } : segs) }
@@ -174,7 +173,7 @@ updateBar i val bar@Bar { left, center, right } =
     (c1, c2) = break isRunnable center
     (r1, r2) = break isRunnable right
 
-    isRunnable Seg { widget = Runnable rw } = i == runnableId rw
+    isRunnable Seg { widget = Runnable rw } = alias' == alias (com rw)
     isRunnable _ = False
 
 -- | Continuously wait for a signal from a thread or a interrupt handler
@@ -261,19 +260,19 @@ eventLoop tv xc@(XConf d r w fs vos is cfg) as signal = do
 
 -- | A running command.
 data Running = Running { handles :: [Async ()]
-                       , chan :: TVar (UUID, String)
+                       , chan :: TVar (String, String)
                        }
 
 -- | Runs a command as an independent thread and returns its Async handles
 -- and the TVar the command will be writing to.
 startCommand :: TMVar SignalType -> RunnableWidget -> IO Running
-startCommand sig RunnableWidget { runnableId, com, val }
-    | alias com == "" = do chan <- newTVarIO (runnableId, is val)
-                           atomically $ writeTVar chan (runnableId, mempty)
+startCommand sig RunnableWidget { com, val }
+    | alias com == "" = do chan <- newTVarIO (alias com, is val)
+                           atomically $ writeTVar chan (alias com, mempty)
                            return Running { handles = [], chan }
 
-    | otherwise       = do chan <- newTVarIO (runnableId, is val)
-                           let cb = atomically . writeTVar chan . (runnableId,)
+    | otherwise       = do chan <- newTVarIO (alias com, is val)
+                           let cb = atomically . writeTVar chan . (alias com,)
 
                            a1 <- async $ start com cb
                            a2 <- async $ trigger com $ maybe (return ()) (atomically . putTMVar sig)
