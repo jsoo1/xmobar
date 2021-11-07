@@ -119,8 +119,9 @@ data Widget = Icon FilePath
             | Hspace Int32
   deriving (Show)
 
-data RunnableWidget = RunnableWidget { com :: Runnable
-                                     , val :: [PlainSeg]
+data RunnableWidget = RunnableWidget { com            :: Runnable
+                                     , runnableFormat :: Format
+                                     , val            :: [PlainSeg]
                                      } deriving (Show)
 
 data BoxOffset = BoxOffset Align Int32 deriving (Eq, Show)
@@ -189,14 +190,14 @@ widgetParser =
 -- | Parses the output template string for a runnable widget
 runnableParser :: Parser RunnableWidget
 runnableParser = do
-  ParseState { sepChar, commands } <- getState
+  ParseState { formatState, sepChar, commands } <- getState
 
   alias'  <- between (string sepChar) (string sepChar) (many1 (noneOf sepChar))
 
   let com = fromMaybe (Run (Com alias' [] [] 10))
             $ find ((==) alias' . alias) commands
 
-  return RunnableWidget { com, val = [] }
+  return RunnableWidget { com, runnableFormat = formatState, val = [] }
 
 -- | Parse a "raw" tag, which we use to prevent other tags from creeping in.
 -- The format here is net-string-esque: a literal "<raw=" followed by a
