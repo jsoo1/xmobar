@@ -40,6 +40,7 @@ import Control.Concurrent.Async (Async, async)
 import Control.Concurrent.STM
 import Control.Exception (bracket_, handle, SomeException(..))
 import Data.Bits
+import Data.Foldable (foldlM)
 import Data.Map hiding (foldr, map, filter)
 import Data.Maybe (fromJust, isJust)
 import qualified Data.List.NonEmpty as NE
@@ -143,13 +144,16 @@ checker :: TVar Bar
            -> TMVar ()
            -> IO ()
 checker tvar ov vs signal pauser = do
-      nval <- atomically $ refreshLockT pauser $ do
-        mapM (readTVar . chan) vs >>= traverse (\(i,new) -> do
-          let nv = updateBar i new ov
-          writeTVar tvar nv
-          return nv)
+      nval <- atomically $ refreshLockT pauser $
+        foldlM (updateRunning tvar) ov =<< traverse (readTVar . chan) vs
       atomically $ putTMVar signal Wakeup
-      checker tvar (last nval) vs signal pauser
+      checker tvar nval vs signal pauser
+
+updateRunning :: TVar Bar -> Bar -> (UUID, String) -> STM Bar
+updateRunning tvar ov (i,new) = do
+  let nv = updateBar i new ov
+  writeTVar tvar nv
+  pure nv
 
 updateBar :: UUID -> String -> Bar -> Bar
 updateBar i val bar@Bar { left, center, right } =
