@@ -169,13 +169,20 @@ barParser = do
    <|> (Bar <$> manyTill segParser eof <*> mempty <*> mempty))
 
 segParser :: Parser Seg
-segParser =
-      try (fnParser segParser)
-  <|> try (boxParser segParser)
-  <|> try (actionParser segParser)
-  <|> try (fcParser segParser)
-  <|> try (Runnable <$> runnableParser)
-  <|>     (Plain    <$> plainSegParser)
+segParser = tagged
+  (try (Runnable <$> runnableParser)
+   <|> (Plain    <$> plainSegParser))
+
+segParser' :: Parser PlainSeg
+segParser' = tagged plainSegParser
+
+tagged :: Parser a -> Parser a
+tagged p =
+      try (fnParser (tagged p))
+  <|> try (boxParser (tagged p))
+  <|> try (actionParser (tagged p))
+  <|> try (fcParser (tagged p))
+  <|>     p
 
 plainSegParser :: Parser PlainSeg
 plainSegParser = PlainSeg <$> widgetParser <*> (formatState <$> getState)

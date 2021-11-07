@@ -44,7 +44,7 @@ import Data.Foldable (foldlM)
 import Data.Map hiding (foldr, map, mapMaybe, filter)
 import Data.Maybe (mapMaybe)
 import qualified Data.List.NonEmpty as NE
-import Text.Parsec (ParseError, many1, eof, try, (<|>))
+import Text.Parsec (ParseError, many1, try, (<|>))
 
 import Xmobar.System.Signal
 import Xmobar.Config.Actions
@@ -159,7 +159,7 @@ data New = NewSegs [PlainSeg] | NewBar Bar
 
 parseNew :: Parser New
 parseNew =
-  try (NewSegs <$> (do ss <- many1 plainSegParser; eof; pure ss))
+  try (NewSegs <$> many1 segParser')
   <|> (NewBar  <$> barParser)
 
 updateRunning :: ParseState -> TVar Bar -> Bar -> (String, String) -> STM Bar
