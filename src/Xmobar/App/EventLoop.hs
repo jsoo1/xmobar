@@ -164,29 +164,28 @@ parseNew =
 
 updateRunning :: ParseState -> TVar Bar -> Bar -> (String, String) -> STM Bar
 updateRunning ps tvar ov (alias',s) = do
-  let new = runParser parseNew ps s
-      nv = updateParseResult (formatState ps) alias' new ov
+  let nv = updateRunnables ps alias' s ov
   writeTVar tvar nv
   pure nv
 
-updateParseResult :: Format -> String -> Either ParseError New -> Bar -> Bar
-updateParseResult fmt alias' (Left e)    = updateRunnables alias' (showError fmt e)
-updateParseResult _   alias' (Right new) = case new of
-  NewBar b -> const b
-  NewSegs s -> updateRunnables alias' s
-
 -- | Update the runnable with alias alias` in bar.
-updateRunnables :: String -> [PlainSeg] -> Bar -> Bar
-updateRunnables alias' val bar@Bar { left, center, right } =
+updateRunnables :: ParseState -> String -> String -> Bar -> Bar
+updateRunnables ps alias' s bar@Bar { left, center, right } =
   case (l2, c2, r2) of
     ((Runnable rw):segs,_,_) ->
-      bar { left = l1 <> (Runnable rw { val } : segs) }
+      case (updateRunnableWidget ps s rw) of
+        Left rw' -> bar { left = l1 <> (Runnable rw' : segs) }
+        Right b  -> b
 
     (_,(Runnable rw):segs,_) ->
-      bar { center = c1 <> (Runnable rw { val }  : segs) }
+      case (updateRunnableWidget ps s rw) of
+        Left rw' -> bar { center = c1 <> (Runnable rw' : segs) }
+        Right b  -> b
 
     (_,_,(Runnable rw):segs) ->
-      bar { right  = r1 <> (Runnable rw { val }  : segs) }
+      case (updateRunnableWidget ps s rw) of
+        Left rw' -> bar { right = r1 <> (Runnable rw' : segs) }
+        Right b  -> b
 
     _ -> bar
 
@@ -195,9 +194,15 @@ updateRunnables alias' val bar@Bar { left, center, right } =
     (c1, c2) = break (isRunnable alias') center
     (r1, r2) = break (isRunnable alias') right
 
+updateRunnableWidget :: ParseState -> String -> RunnableWidget -> Either RunnableWidget Bar
+updateRunnableWidget ps s rw@RunnableWidget { runnableFormat } =
+  case runParser parseNew (ps { formatState = runnableFormat }) s of
+    Right (NewSegs ss) -> Left (rw { val = ss })
+    Right (NewBar b)   -> Right b
+    Left e             -> Left (rw { val = showError runnableFormat e })
+
 showError :: Format -> ParseError -> [PlainSeg]
 showError format e = [PlainSeg { format, widget = Text (show e) }]
-
 
 isRunnable :: String -> Seg -> Bool
 isRunnable alias' (Runnable rw) = alias' == alias (com rw)
