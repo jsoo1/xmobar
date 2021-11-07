@@ -60,8 +60,8 @@ xmobar conf = withDeferSignals $ do
 
   bar <- either (hPrint stderr >=> const exitFailure) pure tmpl
 
-  let runnable Seg { widget = Runnable rw } = [rw]
-      runnable _                            = []
+  let runnable (Runnable rw) = [rw]
+      runnable _             = []
       cls = foldMap runnable (allSegments bar)
 
   initThreads

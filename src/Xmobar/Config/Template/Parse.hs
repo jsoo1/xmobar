@@ -42,6 +42,10 @@ data Bar = Bar { left, center, right :: [Seg] }
 allSegments :: Bar -> [Seg]
 allSegments Bar { left, center, right } = left <> center <> right
 
+plainSegments :: Seg -> [PlainSeg]
+plainSegments (Plain s)     = pure s
+plainSegments (Runnable rw) = val rw
+
 type Parser a = ParsecT String ParseState (MTL.Reader ParseState) a
 
 data ParseState = ParseState { formatState :: Format
@@ -103,18 +107,20 @@ data ConfigTemplate = Unparsed String | Parsed Bar
 instance Read ConfigTemplate where
   readsPrec i = fmap (\(x, s) -> (Unparsed x, s)) . readsPrec i
 
-data Seg = Seg { widget :: Widget
-               , format :: Format
-               } deriving (Show)
+data Seg = Plain PlainSeg | Runnable RunnableWidget
+  deriving (Show)
+
+data PlainSeg = PlainSeg { widget :: Widget
+                         , format :: Format
+                         } deriving (Show)
 
 data Widget = Icon FilePath
             | Text String
             | Hspace Int32
-            | Runnable RunnableWidget
   deriving (Show)
 
 data RunnableWidget = RunnableWidget { com :: Runnable
-                                     , val :: String
+                                     , val :: [PlainSeg]
                                      } deriving (Show)
 
 data BoxOffset = BoxOffset Align Int32 deriving (Eq, Show)
@@ -167,13 +173,16 @@ segParser =
   <|> try (boxParser segParser)
   <|> try (actionParser segParser)
   <|> try (fcParser segParser)
-  <|> try (Seg <$> widgetParser <*> (formatState <$> getState))
+  <|> try (Runnable <$> runnableParser)
+  <|>     (Plain    <$> plainSegParser)
+
+plainSegParser :: Parser PlainSeg
+plainSegParser = PlainSeg <$> widgetParser <*> (formatState <$> getState)
 
 widgetParser :: Parser Widget
 widgetParser =
       try (Icon     <$> iconParser)
   <|> try (Hspace   <$> hspaceParser)
-  <|> try (Runnable <$> runnableParser)
   <|> try (Text     <$> rawParser)
   <|>     (Text     <$> textParser)
 
@@ -182,12 +191,12 @@ runnableParser :: Parser RunnableWidget
 runnableParser = do
   ParseState { sepChar, commands } <- getState
 
-  val  <- between (string sepChar) (string sepChar) (many1 (noneOf sepChar))
+  alias'  <- between (string sepChar) (string sepChar) (many1 (noneOf sepChar))
 
-  let com = fromMaybe (Run (Com val [] [] 10))
-            $ find ((==) val . alias) commands
+  let com = fromMaybe (Run (Com alias' [] [] 10))
+            $ find ((==) alias' . alias) commands
 
-  return RunnableWidget { com, val }
+  return RunnableWidget { com, val = [] }
 
 -- | Parse a "raw" tag, which we use to prevent other tags from creeping in.
 -- The format here is net-string-esque: a literal "<raw=" followed by a

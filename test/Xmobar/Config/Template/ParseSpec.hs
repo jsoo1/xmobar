@@ -49,14 +49,15 @@ spec = do
           "<fc=#00FF00><action=`echo hi`>%uname%</action></fc> * <fc=#FF0000>%theDate%</fc>"
     context unalignedTemplate $ do
       let segments = runParser (many1 segParser) defaultParseState unalignedTemplate
-          runnable Seg { widget = Runnable rw } = [rw]
-          runnable _                            = []
+          runnable (Runnable rw) = [rw]
+          runnable _             = []
 
       let extraAction = "<action=`echo hi again`>plain</action>"
       it ("parses extra actions: " <> extraAction) $ do
         let tmpl = unalignedTemplate <> "<action=`echo hi again`>plain</action>"
             res = do
-              segs <- runParser (many1 segParser) defaultParseState tmpl
+              p <- runParser (many1 segParser) defaultParseState tmpl
+              let segs = plainSegments =<< p
               pure (foldMap (maybeToList . actions . format) segs)
         length res `shouldBe` 1
 
@@ -125,7 +126,7 @@ spec = do
         let res = runParser (many1 segParser) defaultParseState adorned
         res `shouldSatisfy` either (const False)
           (\res -> case res of
-              [ Seg { widget = Text "some prefix "}, Seg { widget = Runnable RunnableWidget { com } } , Seg { widget = Text " some suffix" } ] ->
+              [ Plain PlainSeg { widget = Text "some prefix "}, Runnable RunnableWidget { com } , Plain PlainSeg { widget = Text " some suffix" } ] ->
                 alias com == "theDate"
 
               _ -> False)
