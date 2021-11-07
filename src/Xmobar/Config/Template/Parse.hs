@@ -27,12 +27,10 @@ import Xmobar.Run.Exec
 import Data.List (find)
 import Data.Maybe (fromMaybe)
 import Data.Int (Int32)
-import Data.UUID (UUID)
 import Text.Parsec hiding (runParser)
 import Text.Read (readMaybe)
 import Graphics.X11.Types (Button)
 import Foreign.C.Types (CInt)
-import System.Random
 
 import qualified Control.Monad.State.Strict as MTL
 import qualified Control.Monad.Reader as MTL
@@ -44,7 +42,7 @@ data Bar = Bar { left, center, right :: [Seg] }
 allSegments :: Bar -> [Seg]
 allSegments Bar { left, center, right } = left <> center <> right
 
-type Parser a = ParsecT String ParseState (MTL.ReaderT ParseState (MTL.State StdGen)) a
+type Parser a = ParsecT String ParseState (MTL.Reader ParseState) a
 
 data ParseState = ParseState { formatState :: Format
                              , stack :: [Tag]
@@ -115,8 +113,7 @@ data Widget = Icon FilePath
             | Runnable RunnableWidget
   deriving (Show)
 
-data RunnableWidget = RunnableWidget { runnableId :: UUID
-                                     , com :: Runnable
+data RunnableWidget = RunnableWidget { com :: Runnable
                                      , val :: String
                                      } deriving (Show)
 
@@ -145,15 +142,11 @@ emptyTextRenderInfo fgColor = TextRenderInfo fgColor 0 0 []
 type FontIndex   = Int
 
 -- | Runs the string parser
-runParser :: Parser a -> StdGen -> ParseState -> String -> (Either ParseError a, StdGen)
-runParser p g initial s = runParserT p initial mempty s `MTL.runReaderT` initial `MTL.runState` g
+runParser :: Parser a -> ParseState -> String -> Either ParseError a
+runParser p initial s = runParserT p initial mempty s `MTL.runReader` initial
 
--- | Runs the string parser, discarding the StdGen
-evalParser :: Parser a -> StdGen -> ParseState -> String -> Either ParseError a
-evalParser p g initial s = runParserT p initial mempty s `MTL.runReaderT` initial `MTL.evalState` g
-
-parseString :: StdGen -> ParseState -> String -> Either ParseError Bar
-parseString = evalParser barParser
+parseString :: ParseState -> String -> Either ParseError Bar
+parseString = runParser barParser
 
 defaultAlign :: String
 defaultAlign = "}{"
@@ -194,9 +187,7 @@ runnableParser = do
   let com = fromMaybe (Run (Com val [] [] 10))
             $ find ((==) val . alias) commands
 
-  runnableId <- MTL.lift (MTL.state uniform)
-
-  return RunnableWidget { runnableId, com, val }
+  return RunnableWidget { com, val }
 
 -- | Parse a "raw" tag, which we use to prevent other tags from creeping in.
 -- The format here is net-string-esque: a literal "<raw=" followed by a

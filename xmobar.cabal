@@ -186,8 +186,6 @@ library
       bytestring >= 0.10.8.2,
       directory,
       unix,
-      uuid,
-      random >= 1.0.0,
       time,
       filepath,
       transformers,
@@ -327,8 +325,6 @@ executable xmobar
                         directory,
                         filepath,
                         unix,
-                        uuid,
-                        random >= 1.0.0,
                         xmobar
 
     ghc-options: -funbox-strict-fields -Wall -fno-warn-unused-do-bind
@@ -365,8 +361,6 @@ test-suite XmobarTest
                  parsec-numbers,
                  stm,
                  async,
-                 uuid,
-                 random >= 1.0.0,
                  temporary,
                  hspec == 2.*,
                  xmobar
