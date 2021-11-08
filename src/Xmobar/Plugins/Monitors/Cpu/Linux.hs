@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-missing-local-signatures -Wno-monomorphism-restriction #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Plugins.Monitors.Cpu.Linux

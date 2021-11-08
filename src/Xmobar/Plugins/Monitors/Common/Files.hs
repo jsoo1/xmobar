@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP, PatternGuards #-}
+{-# OPTIONS_GHC -Wno-missing-local-signatures #-}
 
 -----------------------------------------------------------------------------
 -- |
@@ -22,7 +23,7 @@ import Control.Applicative
 
 import Data.Char hiding (Space)
 import Data.Function
-import Data.List
+import Data.List (isPrefixOf, sort, sortBy, intercalate, partition)
 import Data.Maybe
 import System.Directory
 

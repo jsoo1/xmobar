@@ -92,7 +92,9 @@ doEveryTenthSecondsCoalesced r action = do
 -- making no attempt to synchronize with other timers.
 doEveryTenthSecondsSleeping :: Int -> IO () -> IO ()
 doEveryTenthSecondsSleeping r action = go
-    where go = action >> tenthSeconds r >> go
+    where
+      go :: IO ()
+      go = action >> tenthSeconds r >> go
 
 -- | Sleep for a given amount of tenths of a second.
 --
@@ -208,8 +210,10 @@ delayUntilNextFire = do
             -- Work around the Int max bound: threadDelay takes an Int, we can
             -- only sleep for so long, which is okay, we'll just check timers
             -- sooner and sleep again.
-            let maxDelay = (maxBound :: Int) `div` 100000
+            let maxDelay :: Int
+                maxDelay = (maxBound :: Int) `div` 100000
                 delay = (tNext - tNow) `min` fromIntegral maxDelay
+                delayUsec :: Int
                 delayUsec = fromIntegral delay * 100000
             registerDelay delayUsec
         Nothing -> newTVarIO False

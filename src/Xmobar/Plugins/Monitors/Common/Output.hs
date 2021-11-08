@@ -1,4 +1,7 @@
 {-#LANGUAGE RecordWildCards#-}
+{-#OPTIONS_GHC -Wno-incomplete-uni-patterns
+               -Wno-monomorphism-restriction
+               -Wno-missing-local-signatures#-}
 
 ------------------------------------------------------------------------------
 -- |
@@ -63,7 +66,9 @@ pShowVerticalBar p v x = pColorizeString p v [convert $ 100 * x]
           | t <= 9600 = ' '
           | t > 9608 = chr 9608
           | otherwise = chr t
-          where t = 9600 + (round val `div` 12)
+          where
+            t :: Int
+            t = 9600 + (round val `div` 12)
 
 pShowPercentsWithColors :: (MonadIO m) => MonitorConfig -> [Float] -> m [String]
 pShowPercentsWithColors p fs =
