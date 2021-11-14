@@ -34,7 +34,7 @@ signal = unsafePerformIO newEmptyMVar
 instance Exec BufferedPipeReader where
     alias      ( BufferedPipeReader a _  )    = a
 
-    trigger br@( BufferedPipeReader _ _  ) sh =
+    trigger br sh =
         takeMVar signal >>= sh . Just >> trigger br sh
 
     start      ( BufferedPipeReader _ ps ) cb = do

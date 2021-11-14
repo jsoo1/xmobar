@@ -22,7 +22,6 @@
 module Xmobar.App.EventLoop
     ( startLoop
     , startCommand
-    , newRefreshLock
     , refreshLock
     , Running(..)
     ) where
@@ -33,18 +32,19 @@ import Graphics.X11.Xlib.Extras
 import Graphics.X11.Xinerama
 import Graphics.X11.Xrandr
 
-import Control.Arrow ((&&&))
+import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Concurrent
 import Control.Concurrent.Async (Async, async)
 import Control.Concurrent.STM
 import Control.Exception (bracket_, handle, SomeException(..))
 import Data.Bits
-import Data.Foldable (foldlM)
+import Data.Either (fromRight)
+import Data.Foldable (foldrM)
 import Data.Map hiding (foldr, map, mapMaybe, filter)
 import Data.Maybe (mapMaybe)
 import qualified Data.List.NonEmpty as NE
-import Text.Parsec (ParseError, many1, try, (<|>))
+import Text.Parsec (ParseError, many, many1, try, (<|>))
 
 import Xmobar.System.Signal
 import Xmobar.Config.Actions
@@ -73,35 +73,21 @@ import Xmobar.System.DBus
 runX :: XConf -> X () -> IO ()
 runX xc f = runReaderT f xc
 
-newRefreshLock :: IO (TMVar ())
-newRefreshLock = newTMVarIO ()
-
 refreshLock :: TMVar () -> IO a -> IO a
 refreshLock var = bracket_ lock unlock
     where
         lock = atomically $ takeTMVar var
         unlock = atomically $ putTMVar var ()
 
-refreshLockT :: TMVar () -> STM a -> STM a
-refreshLockT var action = do
-    takeTMVar var
-    r <- action
-    putTMVar var ()
-    return r
-
 -- | Starts the main event loop and threads
-startLoop :: Bar
+startLoop :: Bar Running
           -> XConf
           -> TMVar SignalType
-          -> TMVar ()
-          -> [Running]
           -> IO ()
-startLoop bar xcfg@(XConf _ _ w _ _ _ conf) sig pauser vs = do
+startLoop bar xcfg@(XConf _ _ w _ _ _ _) sig = do
 #ifdef XFT
     xftInitFtLibrary
 #endif
-    tv <- newTVarIO bar
-    _ <- forkIO (handle (handler "checker") (checker (emptyParseState' conf) tv bar vs sig pauser))
 #ifdef THREADED_RUNTIME
     _ <- forkOS (handle (handler "eventer") (eventer sig))
 #else
@@ -110,7 +96,7 @@ startLoop bar xcfg@(XConf _ _ w _ _ _ conf) sig pauser vs = do
 #ifdef DBUS
     runIPC sig
 #endif
-    eventLoop tv xcfg [] sig
+    eventLoop bar xcfg [] sig
   where
     handler thing (SomeException e) =
       void $ putStrLn ("Thread " ++ thing ++ " failed: " ++ show e)
@@ -136,94 +122,23 @@ startLoop bar xcfg@(XConf _ _ w _ _ _ conf) sig pauser vs = do
                    putTMVar signal (Action (ev_button ev) (fi $ ev_x ev))
             _ -> return ()
 
--- | Send signal to eventLoop every time a var is updated
-checker :: ParseState
-           -> TVar Bar
-           -> Bar
-           -> [Running]
-           -> TMVar SignalType
-           -> TMVar ()
-           -> IO ()
-checker parseState tvar ov vs signal pauser = do
-      nval <- atomically $ refreshLockT pauser $ do
-        xs <- traverse (readTVar . chan) vs
-        foldlM (updateRunning parseState tvar) ov xs
-      atomically $ putTMVar signal Wakeup
-      checker parseState tvar nval vs signal pauser
-
-emptyParseState' :: Config -> ParseState
-emptyParseState' conf =
-  emptyParseState (fgColor conf) (sepChar conf) (alignSep conf) (commands conf)
-
-data New = NewSegs [PlainSeg] | NewBar Bar
-
-parseNew :: Parser New
-parseNew =
-  try (NewSegs <$> many1 segParser')
-  <|> (NewBar  <$> barParser)
-
-updateRunning :: ParseState -> TVar Bar -> Bar -> (String, String) -> STM Bar
-updateRunning ps tvar ov (alias',s) = do
-  let nv = updateRunnables ps alias' s ov
-  writeTVar tvar nv
-  pure nv
-
--- | Update the runnable with alias alias` in bar.
-updateRunnables :: ParseState -> String -> String -> Bar -> Bar
-updateRunnables ps alias' s bar@Bar { left, center, right } =
-  case (l2, c2, r2) of
-    ((Runnable rw):segs,_,_) ->
-      case (updateRunnableWidget ps s rw) of
-        Left rw' -> bar { left = l1 <> (Runnable rw' : segs) }
-        Right b  -> b
-
-    (_,(Runnable rw):segs,_) ->
-      case (updateRunnableWidget ps s rw) of
-        Left rw' -> bar { center = c1 <> (Runnable rw' : segs) }
-        Right b  -> b
-
-    (_,_,(Runnable rw):segs) ->
-      case (updateRunnableWidget ps s rw) of
-        Left rw' -> bar { right = r1 <> (Runnable rw' : segs) }
-        Right b  -> b
-
-    _ -> bar
-
-  where
-    (l1, l2) = break (isRunnable alias') left
-    (c1, c2) = break (isRunnable alias') center
-    (r1, r2) = break (isRunnable alias') right
-
-updateRunnableWidget :: ParseState -> String -> RunnableWidget -> Either RunnableWidget Bar
-updateRunnableWidget ps s rw@RunnableWidget { runnableFormat } =
-  case runParser parseNew (ps { formatState = runnableFormat }) s of
-    Right (NewSegs ss) -> Left (rw { val = ss })
-    Right (NewBar b)   -> Right b
-    Left e             -> Left (rw { val = showError runnableFormat e })
-
-showError :: Format -> ParseError -> [PlainSeg]
-showError format e = [PlainSeg { format, widget = Text (show e) }]
-
-isRunnable :: String -> Seg -> Bool
-isRunnable alias' (Runnable rw) = alias' == alias (com rw)
-isRunnable _  _                 = False
-
 -- | Continuously wait for a signal from a thread or a interrupt handler
-eventLoop :: TVar Bar
+eventLoop :: Bar Running
              -> XConf
              -> [([Action], Position, Position)]
              -> TMVar SignalType
              -> IO ()
-eventLoop tv xc@(XConf d r w fs vos is cfg) as signal = do
+eventLoop bar xc@(XConf d r w fs vos is cfg) as signal = do
       typ <- atomically $ takeTMVar signal
       case typ of
          Wakeup -> do
-            b <- readTVarIO tv
-            c <- updateCache d w is (iconRoot cfg) b
+            b <- runExceptT $ traverse updateRunning bar
+            let plain = either id (fmap segs) b
+            c <- updateCache d w is (iconRoot cfg) plain
             let xc' = xc { iconS = c }
-            as' <- updateActions xc r b
-            runX xc' $ drawInWin r b
-            eventLoop tv xc' as' signal
+            as' <- updateActions xc r plain
+            runX xc' $ drawInWin r plain
+            eventLoop (fromRight bar b) xc' as' signal
 
          Reposition ->
             reposWindow cfg
@@ -237,7 +152,7 @@ eventLoop tv xc@(XConf d r w fs vos is cfg) as signal = do
          Toggle t -> toggle t
 
          TogglePersistent -> eventLoop
-            tv xc { config = cfg { persistent = not $ persistent cfg } } as signal
+            bar xc { config = cfg { persistent = not $ persistent cfg } } as signal
 
          Action but x -> action but x
 
@@ -246,29 +161,29 @@ eventLoop tv xc@(XConf d r w fs vos is cfg) as signal = do
 
         hide t
             | t == 0 =
-                when isPersistent (hideWindow d w) >> eventLoop tv xc as signal
+                when isPersistent (hideWindow d w) >> eventLoop bar xc as signal
             | otherwise = do
                 void $ forkIO
                      $ threadDelay t >> atomically (putTMVar signal $ Hide 0)
-                eventLoop tv xc as signal
+                eventLoop bar xc as signal
 
         reveal t
             | t == 0 = do
                 when isPersistent (showWindow r cfg d w)
-                eventLoop tv xc as signal
+                eventLoop bar xc as signal
             | otherwise = do
                 void $ forkIO
                      $ threadDelay t >> atomically (putTMVar signal $ Reveal 0)
-                eventLoop tv xc as signal
+                eventLoop bar xc as signal
 
         toggle t = do
             ismapped <- isMapped d w
             atomically (putTMVar signal $ if ismapped then Hide t else Reveal t)
-            eventLoop tv xc as signal
+            eventLoop bar xc as signal
 
         reposWindow rcfg = do
           r' <- repositionWin d w (NE.head fs) rcfg
-          eventLoop tv (XConf d r' w fs vos is rcfg) as signal
+          eventLoop bar (XConf d r' w fs vos is rcfg) as signal
 
         updateConfigPosition ocfg =
           case position ocfg of
@@ -286,56 +201,97 @@ eventLoop tv xc@(XConf d r w fs vos is cfg) as signal = do
             filter (\(Spawn b _) -> button `elem` b) $
             concatMap (\(a,_,_) -> a) $
             filter (\(_, from, to) -> x >= from && x <= to) as
-          eventLoop tv xc as signal
+          eventLoop bar xc as signal
 
 -- $command
 
 -- | A running command.
 data Running = Running { handles :: [Async ()]
-                       , chan :: TVar (String, String)
+                       , runningFormat :: Format
+                       , segs :: [PlainSeg]
+                       , var :: TMVar (Either ParseError New)
                        }
+
+data New = NewSegs [PlainSeg] | NewBar (Bar [PlainSeg])
+
+parseNew :: Parser New
+parseNew =
+  try (NewSegs <$> many1 segParser')
+  <|> (NewBar  <$> barParser (many plainSegParser))
+
+showError :: Format -> ParseError -> [PlainSeg]
+showError format e = [ PlainSeg { format, widget = Text (show e) } ]
+
+updateRunning :: Running -> ExceptT (Bar [PlainSeg]) IO Running
+updateRunning r@Running { runningFormat, var } = do
+  v <- liftIO $ atomically $ tryTakeTMVar var
+  case v of
+    Nothing                  -> pure r
+    Just (Left e)            -> pure (r { segs = showError runningFormat e })
+    Just (Right (NewSegs s)) -> pure (r { segs = s })
+    Just (Right (NewBar b))  -> throwError b
 
 -- | Runs a command as an independent thread and returns its Async handles
 -- and the TVar the command will be writing to.
-startCommand :: TMVar SignalType -> RunnableWidget -> IO Running
-startCommand sig RunnableWidget { com }
-    | alias com == "" = do chan <- newTVarIO (alias com, is (alias com))
-                           atomically $ writeTVar chan (alias com, mempty)
-                           return Running { handles = [], chan }
+startCommand :: TMVar SignalType -> ParseState -> RunnableWidget -> IO Running
+startCommand sig ps RunnableWidget { runnableFormat = runningFormat, com }
+    | alias com == "" = do var <- newEmptyTMVarIO
+                           return Running { handles = []
+                                          , segs = plain "Command missing an alias"
+                                          , runningFormat
+                                          , var
+                                          }
 
-    | otherwise       = do chan <- newTVarIO (alias com, is (alias com))
-                           let cb = atomically . writeTVar chan . (alias com,)
+
+    | otherwise       = do var <- newEmptyTMVarIO
+                           let cb res = atomically $ do
+                                 putTMVar var $ runParser parseNew (ps { formatState = runningFormat }) res
+                                 putTMVar sig Wakeup
 
                            a1 <- async $ start com cb
                            a2 <- async $ trigger com $ maybe (return ()) (atomically . putTMVar sig)
-                           return Running { handles = [ a1, a2 ], chan }
+                           return Running { handles = [ a1, a2 ]
+                                          , segs = plain (is (alias com))
+                                          , runningFormat
+                                          , var
+                                          }
+
 
     where is x = "Updating " <> x <> "..."
+          plain msg = [ PlainSeg { format = runningFormat, widget = Text msg } ]
 
+getCoords :: XConf -> PlainSeg -> IO (Maybe [Action], Position, Position)
+getCoords XConf { display, fontListS } PlainSeg { widget = Text s, format = Format { fontIndex, actions } } = do
+  tw <- textWidth display (safeIndex fontListS fontIndex) s
+  return (actions, 0, fi tw)
 
+getCoords XConf { iconS } PlainSeg { widget = Icon s, format = Format { actions } } = do
+  let iconW i = maybe 0 Bitmap.width (lookup i iconS)
+  return (actions, 0, fi $ iconW s)
 
-updateActions :: XConf -> Rectangle -> Bar -> IO [([Action], Position, Position)]
+getCoords _ PlainSeg { widget = Hspace w, format = Format { actions } } =
+  return (actions, 0, fi w)
+
+segStr :: XConf -> Seg [PlainSeg] -> IO [(Maybe [Action], Position, Position)]
+segStr conf seg = case seg of
+  Plain s -> pure <$> getCoords conf s
+  Runnable ss -> mapM (getCoords conf) ss
+
+updateActions :: XConf -> Rectangle -> Bar [PlainSeg] -> IO [([Action], Position, Position)]
 updateActions conf (Rectangle _ _ wid _) Bar { left, center, right } = do
-  let (d,fs) = (display &&& fontListS) conf
-      strLn :: [PlainSeg] -> IO [(Maybe [Action], Position, Position)]
-      strLn  = liftIO . mapM getCoords
-      iconW i = maybe 0 Bitmap.width (lookup i $ iconS conf)
-      getCoords PlainSeg { widget = Text s, format = Format { fontIndex, actions } } = do
-        tw <- textWidth d (safeIndex fs fontIndex) s
-        return (actions, 0, fi tw)
-      getCoords PlainSeg { widget = Icon s, format = Format { actions } } = return (actions, 0, fi $ iconW s)
-      getCoords PlainSeg { widget = Hspace w, format = Format { actions } } = return (actions, 0, fi w)
+  let strLn :: [Seg [PlainSeg]] -> IO [(Maybe [Action], Position, Position)]
+      strLn = foldrM (\seg widths -> (<> widths) <$> segStr conf seg) []
+      totSLen = foldr (\(_,_,len) -> (+) len) 0
+      remWidth xs = fi wid - totSLen xs
+      offs = 1
       partCoord off xs = mapMaybe (\(a, x, x') -> fmap (,x,x') a) $
                          scanl (\(_,_,x') (a,_,w') -> (a, x', x' + w'))
                                (Nothing, 0, off)
                                xs
-      totSLen = foldr (\(_,_,len) -> (+) len) 0
-      remWidth xs = fi wid - totSLen xs
-      offs = 1
 
-  left' <- strLn (plainSegments =<< left)
-  center' <- strLn (plainSegments =<< center)
-  right' <- strLn (plainSegments =<< right)
+  left' <- strLn left
+  center' <- strLn center
+  right' <- strLn right
 
   let left'' = partCoord offs left'
       center'' = partCoord (remWidth center' + offs `div` 2) center'
