@@ -20,11 +20,11 @@
 module Xmobar.App.Main (xmobar, xmobarMain, configFromArgs) where
 
 import Control.Concurrent.Async (cancel)
-import Control.Concurrent.STM (newEmptyTMVarIO)
+import Control.Concurrent.STM (newEmptyTMVarIO, newTMVarIO)
 import Control.Exception (bracket)
 import Control.Monad (unless, (>=>))
 
-import Data.Foldable (for_)
+import Data.Foldable (traverse_)
 import qualified Data.Map as Map
 import Data.List (intercalate)
 import Data.Maybe (isJust)
@@ -47,22 +47,19 @@ import Xmobar.X11.Types
 import Xmobar.X11.Text
 import Xmobar.X11.Window
 import Xmobar.App.Opts (recompileFlag, verboseFlag, getOpts, doOpts)
-import Xmobar.App.EventLoop (startLoop, startCommand, newRefreshLock, refreshLock, Running(..))
+import Xmobar.App.EventLoop (startLoop, startCommand, refreshLock, Running(..))
 import Xmobar.App.Compile (recompile, trace)
 import Xmobar.App.Config
 import Xmobar.App.Timer (withTimer)
 
 xmobar :: Config -> IO ()
 xmobar conf = withDeferSignals $ do
-  let tmpl = case template conf of
-        Unparsed s -> parseString (emptyParseState' conf) s
+  let ps = emptyParseState' conf
+      tmpl = case template conf of
+        Unparsed s -> parseString ps s
         Parsed t   -> pure t
 
   bar <- either (hPrint stderr >=> const exitFailure) pure tmpl
-
-  let runnable (Runnable rw) = [rw]
-      runnable _             = []
-      cls = foldMap runnable (allSegments bar)
 
   initThreads
   d <- openDisplay ""
@@ -71,16 +68,16 @@ xmobar conf = withDeferSignals $ do
   let confSig = unSignalChan (signal conf)
   sig   <- maybe newEmptyTMVarIO pure confSig
   unless (isJust confSig) $ setupSignalHandler sig
-  refLock <- newRefreshLock
+  refLock <- newTMVarIO ()
   withTimer (refreshLock refLock) $
-    bracket (mapM (startCommand sig) cls) cleanupThreads $
-      \vars -> do
+    bracket (traverse (startCommand sig ps) bar) cleanupThreads $
+      \runningBar -> do
         (r,w) <- createWin d fs conf
         let ic = Map.empty
             to = textOffset conf
             ts = textOffsets conf ++ replicate (length fl) (-1)
             xconf = XConf d r w (fs :| fl) (to :| ts) ic conf
-        startLoop bar xconf sig refLock vars
+        startLoop runningBar xconf sig
 
 emptyParseState' :: Config -> ParseState
 emptyParseState' conf =
@@ -89,10 +86,8 @@ emptyParseState' conf =
 configFromArgs :: Config -> IO Config
 configFromArgs cfg = getArgs >>= getOpts >>= doOpts cfg . fst
 
-cleanupThreads :: [Running] -> IO ()
-cleanupThreads vars =
-  for_ vars $ \cmd ->
-    for_ (handles cmd) cancel
+cleanupThreads :: Bar Running -> IO ()
+cleanupThreads = traverse_ (traverse cancel . handles)
 
 buildLaunch :: [String] -> Bool -> Bool -> String -> ParseError -> IO ()
 buildLaunch args verb force p e = do

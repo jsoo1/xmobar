@@ -1,3 +1,6 @@
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NamedFieldPuns #-}
@@ -35,16 +38,11 @@ import Foreign.C.Types (CInt)
 import qualified Control.Monad.State.Strict as MTL
 import qualified Control.Monad.Reader as MTL
 
+data Bar a = Bar { left, center, right :: [Seg a] }
+  deriving (Show, Functor, Foldable, Traversable)
 
-data Bar = Bar { left, center, right :: [Seg] }
-  deriving (Show)
-
-allSegments :: Bar -> [Seg]
+allSegments :: Bar a -> [Seg a]
 allSegments Bar { left, center, right } = left <> center <> right
-
-plainSegments :: Seg -> [PlainSeg]
-plainSegments (Plain s)     = pure s
-plainSegments (Runnable rw) = val rw
 
 type Parser a = ParsecT String ParseState (MTL.Reader ParseState) a
 
@@ -101,14 +99,14 @@ emptyFormat fgColor = Format { fontIndex = 0
                              , actions = Nothing
                              }
 
-data ConfigTemplate = Unparsed String | Parsed Bar
+data ConfigTemplate = Unparsed String | Parsed (Bar RunnableWidget)
   deriving (Show)
 
 instance Read ConfigTemplate where
   readsPrec i = fmap (\(x, s) -> (Unparsed x, s)) . readsPrec i
 
-data Seg = Plain PlainSeg | Runnable RunnableWidget
-  deriving (Show)
+data Seg a = Plain PlainSeg | Runnable a
+  deriving (Show, Functor, Foldable, Traversable)
 
 data PlainSeg = PlainSeg { widget :: Widget
                          , format :: Format
@@ -121,7 +119,6 @@ data Widget = Icon FilePath
 
 data RunnableWidget = RunnableWidget { com            :: Runnable
                                      , runnableFormat :: Format
-                                     , val            :: [PlainSeg]
                                      } deriving (Show)
 
 data BoxOffset = BoxOffset Align Int32 deriving (Eq, Show)
@@ -152,25 +149,25 @@ type FontIndex   = Int
 runParser :: Parser a -> ParseState -> String -> Either ParseError a
 runParser p initial s = runParserT p initial mempty s `MTL.runReader` initial
 
-parseString :: ParseState -> String -> Either ParseError Bar
-parseString = runParser barParser
+parseString :: ParseState -> String -> Either ParseError (Bar RunnableWidget)
+parseString = runParser (barParser runnableParser)
 
 defaultAlign :: String
 defaultAlign = "}{"
 
-barParser :: Parser Bar
-barParser = do
+barParser :: Parser a -> Parser (Bar a)
+barParser p = do
   ParseState { alignSep } <- getState
   let [alignSepL, alignSepR] = if length alignSep == 2 then alignSep else defaultAlign
 
-  (try (Bar <$> manyTill segParser (char alignSepL)
-            <*> manyTill segParser (char alignSepR)
-            <*> manyTill segParser eof)
-   <|> (Bar <$> manyTill segParser eof <*> mempty <*> mempty))
+  (try (Bar <$> manyTill (segParser p) (char alignSepL)
+            <*> manyTill (segParser p) (char alignSepR)
+            <*> manyTill (segParser p) eof)
+   <|> (Bar <$> manyTill (segParser p) eof <*> mempty <*> mempty))
 
-segParser :: Parser Seg
-segParser = tagged
-  (try (Runnable <$> runnableParser)
+segParser :: Parser a -> Parser (Seg a)
+segParser p = tagged
+  (try (Runnable <$> p)
    <|> (Plain    <$> plainSegParser))
 
 segParser' :: Parser PlainSeg
@@ -204,7 +201,7 @@ runnableParser = do
   let com = fromMaybe (Run (Com alias' [] [] 10))
             $ find ((==) alias' . alias) commands
 
-  return RunnableWidget { com, runnableFormat = formatState, val = [] }
+  return RunnableWidget { com, runnableFormat = formatState }
 
 -- | Parse a "raw" tag, which we use to prevent other tags from creeping in.
 -- The format here is net-string-esque: a literal "<raw=" followed by a

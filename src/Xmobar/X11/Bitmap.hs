@@ -55,7 +55,7 @@ data Bitmap = Bitmap { width  :: Dimension
                      }
 
 updateCache :: Display -> Window -> Map FilePath Bitmap -> FilePath ->
-               Bar -> IO (Map FilePath Bitmap)
+               Bar a -> IO (Map FilePath Bitmap)
 updateCache dpy win cache iconRoot bar = do
   let paths = mapMaybe icons $ allSegments bar
       icons (Plain PlainSeg { widget = Icon p }) = Just p
