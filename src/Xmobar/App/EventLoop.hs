@@ -173,17 +173,17 @@ updateRunnables :: ParseState -> String -> String -> Bar -> Bar
 updateRunnables ps alias' s bar@Bar { left, center, right } =
   case (l2, c2, r2) of
     ((Runnable rw):segs,_,_) ->
-      case (updateRunnableWidget ps s rw) of
+      case updateRunnableWidget ps s rw of
         Left rw' -> bar { left = l1 <> (Runnable rw' : segs) }
         Right b  -> b
 
     (_,(Runnable rw):segs,_) ->
-      case (updateRunnableWidget ps s rw) of
+      case updateRunnableWidget ps s rw of
         Left rw' -> bar { center = c1 <> (Runnable rw' : segs) }
         Right b  -> b
 
     (_,_,(Runnable rw):segs) ->
-      case (updateRunnableWidget ps s rw) of
+      case updateRunnableWidget ps s rw of
         Left rw' -> bar { right = r1 <> (Runnable rw' : segs) }
         Right b  -> b
 
@@ -304,7 +304,8 @@ startCommand sig RunnableWidget { com }
                            return Running { handles = [], chan }
 
     | otherwise       = do chan <- newTVarIO (alias com, is (alias com))
-                           let cb = atomically . writeTVar chan . (alias com,)
+                           let cb res = do
+                                 atomically (writeTVar chan (alias com, res))
 
                            a1 <- async $ start com cb
                            a2 <- async $ trigger com $ maybe (return ()) (atomically . putTMVar sig)

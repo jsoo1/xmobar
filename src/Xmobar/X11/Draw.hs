@@ -25,6 +25,7 @@ import Prelude hiding (lookup)
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Arrow ((&&&))
+import Data.Foldable (foldrM)
 import Data.Map hiding ((\\), foldr, map, filter)
 import Data.List ((\\))
 import qualified Data.List.NonEmpty as NE
@@ -49,23 +50,32 @@ import Graphics.X11.Xrender
 fi :: (Integral a, Num b) => a -> b
 fi = fromIntegral
 
+getWidth :: Num a => PlainSeg -> X (Widget, TextRenderInfo, FontIndex, a)
+getWidth PlainSeg { widget, format = Format { textRenderInfo, fontIndex } } = do
+  XConf { display, fontListS, iconS } <- ask
+  let iconW i = maybe 0 B.width (lookup i iconS)
+
+  case widget of
+    Text s -> do
+      tw <- liftIO $ textWidth display (safeIndex fontListS fontIndex) s
+      return (Text s,textRenderInfo,fontIndex,fi tw)
+    Hspace p ->
+      return (Hspace p,textRenderInfo,fontIndex,fi p)
+    Icon s ->
+      return (Icon s,textRenderInfo,fontIndex,fi $ iconW s)
+
+segStr :: Num a => Seg [PlainSeg] -> X [(Widget, TextRenderInfo, FontIndex, a)]
+segStr seg = case seg of
+  Plain s -> pure <$> getWidth s
+  Runnable ss -> mapM getWidth ss
+
 -- | Draws in and updates the window
-drawInWin :: Rectangle -> Bar -> X ()
+drawInWin :: Rectangle -> Bar [PlainSeg] -> X ()
 drawInWin wr@(Rectangle _ _ wid ht) Bar { left, center, right } = do
   r <- ask
   let (c,d) = (config &&& display) r
       (w,(fs,vs)) = (window &&& fontListS &&& verticalOffsets) r
-      strLn = liftIO . mapM getWidth
-      iconW i = maybe 0 B.width (lookup i $ iconS r)
-      getWidth (PlainSeg { widget, format = Format { textRenderInfo, fontIndex } }) =
-        case widget of
-          Text s -> do
-            tw <- textWidth d (safeIndex fs fontIndex) s
-            return (Text s,textRenderInfo,fontIndex,fi tw)
-          Hspace p ->
-            return (Hspace p,textRenderInfo,fontIndex,fi p)
-          Icon s ->
-            return (Icon s,textRenderInfo,fontIndex,fi $ iconW s)
+      strLn = foldrM (\seg widths -> (widths <>) <$> segStr seg) []
 
   p <- liftIO $ createPixmap d w wid ht
                          (defaultDepthOfScreen (defaultScreenOfDisplay d))
@@ -84,9 +94,9 @@ drawInWin wr@(Rectangle _ _ wid ht) Bar { left, center, right } = do
       liftIO $ setForeground d gc bgcolor
       liftIO $ fillRectangle d p gc 0 0 wid ht
     -- write to the pixmap the new string
-    printStrings p gc fs vs 1 L [] =<< strLn (plainSegments =<< left)
-    printStrings p gc fs vs 1 R [] =<< strLn (plainSegments =<< right)
-    printStrings p gc fs vs 1 C [] =<< strLn (plainSegments =<< center)
+    printStrings p gc fs vs 1 L [] =<< strLn left
+    printStrings p gc fs vs 1 R [] =<< strLn right
+    printStrings p gc fs vs 1 C [] =<< strLn center
     -- draw border if requested
     liftIO $ drawBorder (border c) (borderWidth c) d p gc bdcolor wid ht
     -- copy the pixmap with the new string to the window
