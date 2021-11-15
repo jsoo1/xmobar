@@ -44,8 +44,9 @@ import Data.Foldable (for_, foldrM)
 import Data.Map hiding (foldr, map, mapMaybe, filter)
 import Data.Maybe (mapMaybe)
 import qualified Data.List.NonEmpty as NE
-import Text.Parsec (ParseError, many, many1, try, (<|>))
+import Text.Parsec (ParseError)
 
+import Xmobar.Input
 import Xmobar.System.Signal
 import Xmobar.Config.Actions
 import Xmobar.Config.Types
@@ -212,13 +213,6 @@ data Running = Running { handles :: [Async ()]
                        , segs :: [PlainSeg]
                        , var :: TMVar (Either ParseError New)
                        }
-
-data New = NewSegs [PlainSeg] | NewBar (Bar [PlainSeg])
-
-parseNew :: Parser New
-parseNew =
-  try (NewSegs <$> many1 segParser')
-  <|> (NewBar  <$> barParser (many plainSegParser))
 
 showError :: Format -> ParseError -> [PlainSeg]
 showError format e = [ PlainSeg { format, widget = Text (show e) } ]
