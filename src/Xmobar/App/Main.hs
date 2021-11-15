@@ -46,6 +46,7 @@ import Xmobar.System.Signal (setupSignalHandler, withDeferSignals)
 import Xmobar.X11.Types
 import Xmobar.X11.Text
 import Xmobar.X11.Window
+import Xmobar.Input
 import Xmobar.App.Opts (recompileFlag, verboseFlag, getOpts, doOpts)
 import Xmobar.App.EventLoop (startLoop, startCommand, refreshLock, Running(..))
 import Xmobar.App.Compile (recompile, trace)
@@ -56,8 +57,8 @@ xmobar :: Config -> IO ()
 xmobar conf = withDeferSignals $ do
   let ps = emptyParseState' conf
       tmpl = case template conf of
-        Unparsed s -> parseString ps s
-        Parsed t   -> pure t
+        InputRaw s -> parseString ps s
+        InputParsed t   -> pure t
 
   bar <- either (hPrint stderr >=> const exitFailure) pure tmpl
 

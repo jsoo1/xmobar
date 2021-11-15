@@ -99,12 +99,6 @@ emptyFormat fgColor = Format { fontIndex = 0
                              , actions = Nothing
                              }
 
-data ConfigTemplate = Unparsed String | Parsed (Bar RunnableWidget)
-  deriving (Show)
-
-instance Read ConfigTemplate where
-  readsPrec i = fmap (\(x, s) -> (Unparsed x, s)) . readsPrec i
-
 data Seg a = Plain PlainSeg | Runnable a
   deriving (Show, Functor, Foldable, Traversable)
 

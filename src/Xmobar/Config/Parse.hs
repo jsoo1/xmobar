@@ -24,6 +24,7 @@ import Text.ParserCombinators.Parsec.Perm ((<|?>), (<$?>), permute)
 import Control.Monad.IO.Class (liftIO)
 import Data.Functor ((<&>))
 
+import Xmobar.Input
 import Xmobar.Config.Types
 
 #if defined XFT || defined UTF8
@@ -88,7 +89,7 @@ parseConfig defaultConfig =
       pBdColor = strField borderColor "borderColor"
       pSepChar = strField sepChar "sepChar"
       pAlignSep = strField alignSep "alignSep"
-      pTemplate = fmap (fmap Unparsed) (strField template "template")
+      pTemplate = fmap (fmap InputRaw) (strField template "template")
 
       pTextOffset = readField textOffset "textOffset"
       pTextOffsets = readIntList textOffsets "textOffsets"

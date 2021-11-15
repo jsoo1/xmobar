@@ -31,6 +31,7 @@ import System.Posix.Files (fileExist)
 import Xmobar.Plugins.Date
 import Xmobar.Plugins.StdinReader
 import Xmobar.Config.Types
+import Xmobar.Input
 import Xmobar.Run.Runnable
 
 -- | The default configuration values
@@ -61,7 +62,7 @@ defaultConfig =
                         , Run StdinReader]
            , sepChar = "%"
            , alignSep = "}{"
-           , template = Unparsed $ "%StdinReader% }{ " ++
+           , template = InputRaw $ "%StdinReader% }{ " ++
                         "<fc=#00FF00>%uname%</fc> * <fc=#FF0000>%theDate%</fc>"
            , verbose = False
            , signal = SignalChan Nothing

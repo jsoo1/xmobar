@@ -25,6 +25,7 @@ import Text.Read (readMaybe)
 import Paths_xmobar (version)
 
 import Xmobar.Config.Types
+import Xmobar.Input
 
 data Opts = Help
           | Verbose
@@ -140,7 +141,7 @@ doOpts conf (o:oo) =
     D -> doOpts' (conf {overrideRedirect = False})
     AlignSep s -> doOpts' (conf {alignSep = s})
     SepChar s -> doOpts' (conf {sepChar = s})
-    Template s -> doOpts' (conf {template = Unparsed s})
+    Template s -> doOpts' (conf {template = InputRaw s})
     IconRoot s -> doOpts' (conf {iconRoot = s})
     OnScr n -> doOpts' (conf {position = OnScreen (read n) $ position conf})
     Commands s -> case readCom 'c' s of
