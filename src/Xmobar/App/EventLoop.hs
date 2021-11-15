@@ -40,7 +40,7 @@ import Control.Concurrent.STM
 import Control.Exception (bracket_, handle, SomeException(..))
 import Data.Bits
 import Data.Either (fromRight)
-import Data.Foldable (foldrM)
+import Data.Foldable (for_, foldrM)
 import Data.Map hiding (foldr, map, mapMaybe, filter)
 import Data.Maybe (mapMaybe)
 import qualified Data.List.NonEmpty as NE
@@ -134,9 +134,9 @@ eventLoop bar xc@(XConf d r w fs vos is cfg) as signal = do
          Wakeup -> do
             b <- runExceptT $ traverse updateRunning bar
             let plain = either id (fmap segs) b
-            c <- updateCache d w is (iconRoot cfg) plain
-            let xc' = xc { iconS = c }
-            as' <- updateActions xc r plain
+            iconS <- updateCache d w is (iconRoot cfg) plain
+            let xc' = xc { iconS }
+            as' <- updateActions xc' r plain
             runX xc' $ drawInWin r plain
             eventLoop (fromRight bar b) xc' as' signal
 
@@ -197,10 +197,11 @@ eventLoop bar xc@(XConf d r w fs vos is cfg) as signal = do
             o -> return (ocfg {position = OnScreen 1 o})
 
         action button x = do
-          mapM_ runAction $
-            filter (\(Spawn b _) -> button `elem` b) $
-            concatMap (\(a,_,_) -> a) $
-            filter (\(_, from, to) -> x >= from && x <= to) as
+          for_ as $ \(as', from, to) ->
+            when (from <= x && x <= to) $
+              for_ as' $ \a@(Spawn bs _) ->
+                when (button `elem` bs) (runAction a)
+
           eventLoop bar xc as signal
 
 -- $command
